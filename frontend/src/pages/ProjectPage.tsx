@@ -149,6 +149,7 @@ export function ProjectPage() {
               generatedFiles={generatedFiles}
               tco={tco}
               messages={messages}
+              project={project}
             />
           </div>
         </TwoColumnPage.Main>

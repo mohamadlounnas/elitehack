@@ -43,15 +43,36 @@ class Logger {
   }
 
   error(message: string, error?: Error | unknown, context?: LogContext): void {
+    let errorDetails: LogContext = {};
+    
+    if (error instanceof Error) {
+      errorDetails = {
+        error: error.message,
+        stack: error.stack,
+        name: error.name,
+      };
+    } else if (error && typeof error === 'object') {
+      // Handle Supabase and other structured error objects
+      const err = error as any;
+      errorDetails = {
+        error: err.message || err.error || JSON.stringify(err),
+        code: err.code,
+        details: err.details,
+        hint: err.hint,
+        // Include all enumerable properties
+        ...Object.fromEntries(
+          Object.entries(err).filter(([key]) => 
+            !['message', 'code', 'details', 'hint'].includes(key)
+          )
+        ),
+      };
+    } else {
+      errorDetails = { error: String(error) };
+    }
+    
     const errorContext: LogContext = {
       ...context,
-      ...(error instanceof Error
-        ? {
-            error: error.message,
-            stack: error.stack,
-            name: error.name,
-          }
-        : { error: String(error) }),
+      ...errorDetails,
     };
     this.log("error", message, errorContext);
   }

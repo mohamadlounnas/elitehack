@@ -22,6 +22,8 @@ type ImageGenerationStreamCallback = (update: {
  */
 class ImageGenerationService {
   private genAI: GoogleGenerativeAI;
+  // Track projects currently generating images to prevent duplicate execution
+  private generatingProjects = new Set<string>();
 
   constructor() {
     if (!geminiApiKey) {
@@ -37,7 +39,69 @@ class ImageGenerationService {
     projectId: string,
     onUpdate: ImageGenerationStreamCallback
   ): Promise<void> {
+    // Prevent duplicate calls
+    if (this.generatingProjects.has(projectId)) {
+      console.log(`[IMAGE GENERATION] Already generating images for project ${projectId}, skipping duplicate call`);
+      logger.warn("Image generation already in progress, skipping duplicate call", { projectId });
+      return;
+    }
+
+    this.generatingProjects.add(projectId);
+
     try {
+      // First, check if all images are already generated
+      logger.db("SELECT", "assets", { projectId });
+      const { data: allAssets, error: allAssetsError } = await supabase
+        .from("assets")
+        .select("id, name, image_generated, image_url")
+        .eq("project_id", projectId);
+
+      if (allAssetsError) {
+        logger.error("Error checking assets", allAssetsError, { projectId });
+        throw allAssetsError;
+      }
+
+      // Check if all images are already generated
+      if (allAssets && allAssets.length > 0) {
+        const allGenerated = allAssets.every(asset => asset.image_generated && asset.image_url);
+        if (allGenerated) {
+          logger.info("All images already generated, skipping generation", { 
+            projectId, 
+            assetCount: allAssets.length 
+          });
+          // Send completion update with all assets
+          allAssets.forEach((asset, index) => {
+            onUpdate({
+              type: "complete",
+              asset: { id: asset.id, name: asset.name },
+              imageUrl: asset.image_url || undefined,
+              progress: index + 1,
+              total: allAssets.length,
+            });
+          });
+          // Final completion
+          onUpdate({
+            type: "complete",
+            progress: allAssets.length,
+            total: allAssets.length,
+          });
+          
+          // Update step and move forward since all images are already generated
+          const { error: updateError } = await supabase
+            .from("projects")
+            .update({ current_step: "assetsImagesGenerated" })
+            .eq("id", projectId);
+
+          if (updateError) {
+            logger.error("Error updating step after images check", updateError, { projectId });
+          } else {
+            logger.info("All images already exist, moving to next step", { projectId });
+            await stepOrchestrator.nextStep(projectId);
+          }
+          return; // Don't regenerate, just return
+        }
+      }
+
       // Find assets that need images
       const { data: assets } = await supabase
         .from("assets")
@@ -47,6 +111,7 @@ class ImageGenerationService {
 
       if (!assets || assets.length === 0) {
         // All images generated, move to next step
+        logger.info("No assets need images, moving to next step", { projectId });
         await stepOrchestrator.nextStep(projectId);
         return;
       }
@@ -70,14 +135,30 @@ class ImageGenerationService {
           const imageDescription = asset.appearance || asset.description || asset.name;
           const imageUrl = await this.generateImage(imageDescription);
 
-          // Update asset with image
-          await supabase
+          // Update asset with image - verify the update succeeded
+          const { error: updateError } = await supabase
             .from("assets")
             .update({
               image_url: imageUrl,
               image_generated: true,
             })
             .eq("id", asset.id);
+
+          if (updateError) {
+            logger.error("Error updating asset with image", updateError, { 
+              projectId, 
+              assetId: asset.id,
+              assetName: asset.name 
+            });
+            throw new Error(`Failed to update asset ${asset.id}: ${updateError.message}`);
+          }
+
+          logger.info("Asset image updated successfully", { 
+            projectId, 
+            assetId: asset.id,
+            assetName: asset.name,
+            progress: `${i + 1}/${total}`
+          });
 
           onUpdate({
             type: "complete",
@@ -89,29 +170,91 @@ class ImageGenerationService {
 
           // Small delay between generations to avoid rate limiting
           await new Promise((resolve) => setTimeout(resolve, 1000));
-        } catch (error) {
-          console.error(`Error generating image for asset ${asset.id}:`, error);
-          // Continue with next asset even if one fails
+        } catch (error: any) {
+          logger.error("Error generating image for asset", error, { 
+            projectId, 
+            assetId: asset.id,
+            assetName: asset.name 
+          });
+          // Continue with next asset even if one fails, but log the error
+          onUpdate({
+            type: "generating",
+            asset: { id: asset.id, name: asset.name },
+            progress: i + 1,
+            total,
+          });
         }
       }
 
+      // Send final completion update
+      onUpdate({
+        type: "complete",
+        progress: total,
+        total,
+      });
+
       // Check if all assets are done
-      const { data: remainingAssets } = await supabase
+      logger.db("SELECT", "assets", { projectId, image_generated: false });
+      const { data: remainingAssets, error: remainingError } = await supabase
         .from("assets")
-        .select("id")
+        .select("id, name, image_generated")
         .eq("project_id", projectId)
         .eq("image_generated", false);
 
+      if (remainingError) {
+        logger.error("Error checking remaining assets", remainingError, { projectId });
+        throw remainingError;
+      }
+
       if (!remainingAssets || remainingAssets.length === 0) {
-        await supabase
+        logger.info("All asset images generated, updating step and moving to next", { projectId });
+        
+        // Update step to assetsImagesGenerated and verify it was updated
+        const { data: updatedProject, error: updateError } = await supabase
           .from("projects")
           .update({ current_step: "assetsImagesGenerated" })
-          .eq("id", projectId);
+          .eq("id", projectId)
+          .select("current_step")
+          .single();
+
+        if (updateError) {
+          logger.error("Error updating project step to assetsImagesGenerated", updateError, { projectId });
+          throw updateError;
+        }
+
+        if (updatedProject?.current_step !== "assetsImagesGenerated") {
+          logger.error("Step update verification failed", undefined, { 
+            projectId, 
+            expected: "assetsImagesGenerated",
+            actual: updatedProject?.current_step 
+          });
+          throw new Error("Step update verification failed");
+        }
+
+        logger.info("Step updated to assetsImagesGenerated, calling nextStep", { 
+          projectId,
+          verifiedStep: updatedProject.current_step 
+        });
+        
+        // Move to next step (sourcing)
         await stepOrchestrator.nextStep(projectId);
+      } else {
+        logger.warn("Some assets still need images after generation loop", { 
+          projectId, 
+          remainingCount: remainingAssets.length,
+          remainingAssets: remainingAssets.map(a => ({ id: a.id, name: a.name }))
+        });
+        
+        // Try to update remaining assets or throw error
+        throw new Error(`Failed to generate images for ${remainingAssets.length} asset(s): ${remainingAssets.map(a => a.name).join(", ")}`);
       }
     } catch (error: any) {
       console.error("Error in imageGenerationService.generateImagesForProjectWithStream:", error);
+      logger.error("Error in generateImagesForProjectWithStream", error, { projectId });
       throw error;
+    } finally {
+      // Always release lock
+      this.generatingProjects.delete(projectId);
     }
   }
 
@@ -120,6 +263,15 @@ class ImageGenerationService {
    * @param projectId - The project ID to generate images for
    */
   async generateImagesForProject(projectId: string): Promise<void> {
+    // Prevent duplicate calls
+    if (this.generatingProjects.has(projectId)) {
+      console.log(`[IMAGE GENERATION] Already generating images for project ${projectId}, skipping duplicate call`);
+      logger.warn("Image generation already in progress, skipping duplicate call", { projectId });
+      return;
+    }
+
+    this.generatingProjects.add(projectId);
+
     try {
       logger.info("Starting image generation for project", { projectId });
       logger.db("SELECT", "assets", { projectId, image_generated: false });
@@ -238,6 +390,9 @@ class ImageGenerationService {
     } catch (error: any) {
       logger.error("Error in imageGenerationService.generateImagesForProject", error, { projectId });
       throw error;
+    } finally {
+      // Always release lock
+      this.generatingProjects.delete(projectId);
     }
   }
 

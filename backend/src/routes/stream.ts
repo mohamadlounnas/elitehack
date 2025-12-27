@@ -77,7 +77,34 @@ router.get("/:id/stream", async (req, res) => {
           await streamLayoutGeneration(id, sendEvent);
           break;
         case "assetsImagesGenerating":
-          await streamImageGeneration(id, sendEvent);
+          // Check if images are already generated before starting
+          const { data: assetsCheck } = await supabase
+            .from("assets")
+            .select("id, image_generated, image_url")
+            .eq("project_id", id);
+          
+          const allImagesGenerated = assetsCheck && assetsCheck.length > 0 && 
+            assetsCheck.every(asset => asset.image_generated && asset.image_url);
+          
+          if (allImagesGenerated) {
+            logger.info("All images already generated, moving to next step", { projectId: id });
+            sendEvent("status", { 
+              step: "assetsImagesGenerating", 
+              message: "All images already generated. Moving to next step..." 
+            });
+            // Update step and move forward
+            await supabase
+              .from("projects")
+              .update({ current_step: "assetsImagesGenerated" })
+              .eq("id", id);
+            await stepOrchestrator.nextStep(id);
+            sendEvent("complete", { 
+              step: "assetsImagesGenerated", 
+              message: "Moving to sourcing..." 
+            });
+          } else {
+            await streamImageGeneration(id, sendEvent);
+          }
           break;
         case "sourcing":
           await streamSourcing(id, sendEvent);
@@ -150,11 +177,34 @@ async function streamImageGeneration(projectId: string, sendEvent: (event: strin
       });
     });
 
+    logger.info("Image generation stream completed, sending completion event", { projectId });
     sendEvent("complete", { 
       step: "assetsImagesGenerating", 
-      message: "All images generated!" 
+      message: "All images generated! Moving to next step..." 
     });
+    
+    // Give a moment for the step transition to complete
+    await new Promise(resolve => setTimeout(resolve, 500));
+    
+    // Check the current step to confirm transition
+    const { data: project } = await supabase
+      .from("projects")
+      .select("current_step")
+      .eq("id", projectId)
+      .single();
+    
+    if (project) {
+      logger.info("Step transition status", { 
+        projectId, 
+        currentStep: project.current_step 
+      });
+      sendEvent("status", { 
+        step: project.current_step, 
+        message: `Moved to ${project.current_step} step` 
+      });
+    }
   } catch (error: any) {
+    logger.error("Error in image generation stream", error, { projectId });
     sendEvent("error", { step: "assetsImagesGenerating", message: error.message });
   }
 }
@@ -201,6 +251,8 @@ async function streamLayoutGeneration(projectId: string, sendEvent: (event: stri
         type: update.type,
         layoutType: update.layoutType,
         imageUrl: update.imageUrl,
+        iteration: update.iteration,
+        feedback: update.feedback,
         progress: update.progress,
         total: update.total,
       });

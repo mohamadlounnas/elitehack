@@ -42,9 +42,73 @@ export function ChatResponseView({ messages }: ChatResponseViewProps) {
                 </Text>
               )}
             </div>
-            <Text size="small" className="whitespace-pre-wrap">
-              {message.content}
-            </Text>
+            {(() => {
+              // Handle multi-part content (text + images)
+              let contentParts: Array<{ type: string; text?: string; inlineData?: any }> = [];
+              
+              if (typeof message.content === 'string') {
+                // Try to parse as JSON (multi-part response)
+                try {
+                  const parsed = JSON.parse(message.content);
+                  if (Array.isArray(parsed)) {
+                    contentParts = parsed;
+                  } else {
+                    contentParts = [{ type: "text", text: message.content }];
+                  }
+                } catch {
+                  // Not JSON, treat as plain text
+                  contentParts = [{ type: "text", text: message.content }];
+                }
+              } else if (Array.isArray(message.content)) {
+                contentParts = message.content;
+              } else {
+                contentParts = [{ type: "text", text: String(message.content) }];
+              }
+
+              return (
+                <div className="flex flex-col gap-y-2">
+                  {contentParts.map((part, idx) => {
+                    if (part.type === "text" && part.text) {
+                      return (
+                        <Text key={idx} size="small" className="whitespace-pre-wrap">
+                          {part.text}
+                        </Text>
+                      );
+                    } else if (part.type === "inlineData" && part.inlineData) {
+                      const { mimeType, data } = part.inlineData;
+                      const imageUrl = `data:${mimeType};base64,${data}`;
+                      return (
+                        <div key={idx} className="mt-2 relative group">
+                          <img 
+                            src={imageUrl} 
+                            alt="AI generated image" 
+                            className="max-w-full h-auto rounded border border-ui-border-base cursor-pointer hover:opacity-90 transition-opacity"
+                            style={{ maxHeight: "300px" }}
+                            onError={(e) => {
+                              const target = e.target as HTMLImageElement;
+                              target.style.display = 'none';
+                              const errorDiv = document.createElement('div');
+                              errorDiv.className = 'text-xs text-ui-fg-subtle p-2 bg-ui-bg-subtle rounded';
+                              errorDiv.textContent = 'Failed to load image';
+                              target.parentElement?.appendChild(errorDiv);
+                            }}
+                            onClick={() => {
+                              window.open(imageUrl, '_blank');
+                            }}
+                          />
+                          <div className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <Badge color="grey" size="xsmall" className="cursor-pointer">
+                              View full
+                            </Badge>
+                          </div>
+                        </div>
+                      );
+                    }
+                    return null;
+                  })}
+                </div>
+              );
+            })()}
             {message.files && message.files.length > 0 && (
               <div className="mt-2 flex flex-wrap gap-2">
                 {message.files.map((file: any, fileIdx: number) => (

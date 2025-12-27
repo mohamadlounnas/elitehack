@@ -2,8 +2,6 @@ export type ProjectStep =
   | "chat"
   | "planning"
   | "planed"
-  | "layoutGenerating"
-  | "layoutGenerated"
   | "assetsImagesGenerating"
   | "assetsImagesGenerated"
   | "sourcing"
@@ -12,6 +10,8 @@ export type ProjectStep =
   | "negotiated"
   | "cost_analysing"
   | "cost_analysed"
+  | "layoutGenerating"
+  | "layoutGenerated"
   | "completed";
 
 export interface Project {
@@ -21,6 +21,7 @@ export interface Project {
   status: string;
   current_step: ProjectStep;
   cost_analysis_pdf?: string;
+  business_plan_excel?: string;
   planning_data?: PlanningData;
   created_at: string;
   updated_at: string;
@@ -43,9 +44,18 @@ export interface ProjectMessage {
   id: string;
   project_id: string;
   role: "user" | "assistant";
-  content: string;
+  content: string | MessagePart[]; // Can be string or array of parts (text + images)
   attachments?: Attachment[];
   created_at: string;
+}
+
+export interface MessagePart {
+  type: "text" | "inlineData";
+  text?: string;
+  inlineData?: {
+    mimeType: string;
+    data: string; // base64 encoded
+  };
 }
 
 export interface Attachment {

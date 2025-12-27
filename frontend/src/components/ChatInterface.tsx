@@ -53,7 +53,69 @@ export function ChatInterface({ projectId, messages, onSendMessage, onStartPlann
                   : "bg-ui-bg-subtle text-ui-fg-base"
               }`}
             >
-              <Text className="whitespace-pre-wrap">{message.content}</Text>
+              {(() => {
+                // Handle multi-part content (text + images)
+                let contentParts: Array<{ type: string; text?: string; inlineData?: any }> = [];
+                
+                if (typeof message.content === 'string') {
+                  // Try to parse as JSON (multi-part response)
+                  try {
+                    const parsed = JSON.parse(message.content);
+                    if (Array.isArray(parsed)) {
+                      contentParts = parsed;
+                    } else {
+                      contentParts = [{ type: "text", text: message.content }];
+                    }
+                  } catch {
+                    // Not JSON, treat as plain text
+                    contentParts = [{ type: "text", text: message.content }];
+                  }
+                } else if (Array.isArray(message.content)) {
+                  contentParts = message.content;
+                } else {
+                  contentParts = [{ type: "text", text: String(message.content) }];
+                }
+
+                return (
+                  <div className="flex flex-col gap-y-2">
+                    {contentParts.map((part, idx) => {
+                      if (part.type === "text" && part.text) {
+                        return (
+                          <Text key={idx} className="whitespace-pre-wrap">
+                            {part.text}
+                          </Text>
+                        );
+                      } else if (part.type === "inlineData" && part.inlineData) {
+                        const { mimeType, data } = part.inlineData;
+                        const imageUrl = `data:${mimeType};base64,${data}`;
+                        return (
+                          <div key={idx} className="mt-2">
+                            <img 
+                              src={imageUrl} 
+                              alt="AI generated image" 
+                              className="max-w-full h-auto rounded border border-ui-border-base cursor-pointer hover:opacity-90 transition-opacity"
+                              style={{ maxHeight: "400px" }}
+                              onError={(e) => {
+                                const target = e.target as HTMLImageElement;
+                                target.style.display = 'none';
+                                const errorDiv = document.createElement('div');
+                                errorDiv.className = 'text-xs text-ui-fg-subtle p-2 bg-ui-bg-subtle rounded';
+                                errorDiv.textContent = 'Failed to load image';
+                                target.parentElement?.appendChild(errorDiv);
+                              }}
+                              onClick={() => {
+                                // Open image in new tab on click
+                                window.open(imageUrl, '_blank');
+                              }}
+                            />
+                          </div>
+                        );
+                      }
+                      return null;
+                    })}
+                  </div>
+                );
+              })()}
               {message.attachments?.length > 0 && (
                 <div className="flex flex-col gap-y-1 mt-2">
                   {message.attachments.map((att, idx) => (

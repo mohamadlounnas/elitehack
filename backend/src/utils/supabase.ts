@@ -15,5 +15,24 @@ export const supabase = createClient(supabaseUrl, supabaseServiceRoleKey, {
     autoRefreshToken: false,
     persistSession: false,
   },
+  db: {
+    schema: "public",
+  },
+  global: {
+    fetch: (url, options = {}) => {
+      return fetch(url, {
+        ...options,
+        signal: AbortSignal.timeout(30000), // 30 second timeout
+      }).catch((error) => {
+        if (error.name === "AbortError" || error.message?.includes("timeout")) {
+          throw new Error(`Supabase request timeout: ${url}`);
+        }
+        if (error.message?.includes("ENOTFOUND") || error.message?.includes("getaddrinfo")) {
+          throw new Error(`Supabase connection error: Unable to reach ${supabaseUrl}. Please check your network connection and Supabase project status.`);
+        }
+        throw error;
+      });
+    },
+  },
 });
 

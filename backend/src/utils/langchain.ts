@@ -28,9 +28,24 @@ export const createLLM = () => {
 /**
  * Creates a lightweight Gemini instance for quick responses
  * Useful for chat interactions and real-time operations
- * Uses Gemini 3 Pro Preview with lower temperature for faster responses
+ * Uses Gemini 2.5 Flash (text-only) for chat - faster and has higher token limits
  */
 export const createNanoLLM = () => {
+  if (!geminiApiKey) {
+    throw new Error("GEMINI_API_KEY is not configured");
+  }
+  return new ChatGoogleGenerativeAI({
+    model: "models/gemini-2.5-flash",
+    temperature: 0.5,
+    apiKey: geminiApiKey,
+  });
+};
+
+/**
+ * Creates a Gemini instance for image generation
+ * Uses Gemini 2.5 Flash Image model for multi-modal tasks
+ */
+export const createImageLLM = () => {
   if (!geminiApiKey) {
     throw new Error("GEMINI_API_KEY is not configured");
   }

@@ -9,7 +9,11 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "lint": "eslint src --ext .ts",
-    "drop-db": "tsx scripts/drop-database.ts"
+    "drop-db": "tsx scripts/drop-database.ts",
+    "migrate": "echo 'Migration SQL file created at scripts/migrate.sql. Please run it in Supabase SQL Editor or use Supabase MCP tools.'",
+    "add-metadata": "tsx scripts/add-metadata-column.ts",
+    "add-business-plan-excel": "tsx scripts/add-business-plan-excel-column.ts",
+    "fix-assets-updated-at": "tsx scripts/fix-assets-updated-at.ts"
   },
   "keywords": [],
   "author": "",
@@ -24,6 +28,7 @@
     "canvas": "^3.2.0",
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",
+    "exceljs": "^4.4.0",
     "express": "^4.18.2",
     "langchain": "^0.3.0",
     "mime": "^4.1.0",

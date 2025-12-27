@@ -86,7 +86,9 @@ npm run dev
 9. **negotiated** - Negotiation complete
 10. **cost_analysing** - TCO calculations and business plan generation
 11. **cost_analysed** - Cost analysis complete
-12. **completed** - Final state
+12. **layoutGenerating** - Generating 2D factory floor plans
+13. **layoutGenerated** - Layout generation complete
+14. **completed** - Final state
 
 ## API Endpoints
 

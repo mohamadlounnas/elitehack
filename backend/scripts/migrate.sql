@@ -1,0 +1,190 @@
+-- ===========================================
+-- Factory Planning Application - Database Migration
+-- ===========================================
+
+-- Enable UUID extension
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
+-- ===========================================
+-- Projects Table
+-- ===========================================
+CREATE TABLE IF NOT EXISTS projects (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    name VARCHAR(255) NOT NULL,
+    description TEXT,
+    current_step VARCHAR(50) DEFAULT 'chat',
+    status VARCHAR(50) DEFAULT 'active',
+    planning_data JSONB,
+    cost_analysis_pdf TEXT,
+    business_plan_excel TEXT,
+    metadata JSONB DEFAULT '{}'::jsonb,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ===========================================
+-- Project Messages Table
+-- ===========================================
+CREATE TABLE IF NOT EXISTS project_messages (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    role VARCHAR(20) NOT NULL CHECK (role IN ('user', 'assistant')),
+    content TEXT NOT NULL,
+    attachments JSONB,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ===========================================
+-- Project Files Table
+-- ===========================================
+CREATE TABLE IF NOT EXISTS project_files (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    filename VARCHAR(255) NOT NULL,
+    file_type VARCHAR(100),
+    file_path TEXT,
+    size_bytes BIGINT,
+    metadata JSONB,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ===========================================
+-- Suppliers Table
+-- ===========================================
+CREATE TABLE IF NOT EXISTS suppliers (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    name VARCHAR(255) NOT NULL,
+    website VARCHAR(255),
+    email VARCHAR(255),
+    phone VARCHAR(50),
+    location VARCHAR(255),
+    rating DECIMAL(3, 2),
+    products JSONB,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ===========================================
+-- Assets Table
+-- ===========================================
+CREATE TABLE IF NOT EXISTS assets (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    supplier_id UUID REFERENCES suppliers(id) ON DELETE SET NULL,
+    name VARCHAR(255) NOT NULL,
+    type VARCHAR(100),
+    appearance TEXT,
+    description TEXT,
+    specifications JSONB,
+    image_generated BOOLEAN DEFAULT FALSE,
+    image_url TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Ensure updated_at column exists (for existing tables)
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 
+        FROM information_schema.columns 
+        WHERE table_name = 'assets' 
+        AND column_name = 'updated_at'
+    ) THEN
+        ALTER TABLE assets 
+        ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
+    END IF;
+END $$;
+
+-- ===========================================
+-- Generated Files Table
+-- ===========================================
+CREATE TABLE IF NOT EXISTS generated_files (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    filename VARCHAR(255) NOT NULL,
+    file_type VARCHAR(50),
+    file_path TEXT,
+    size_bytes BIGINT,
+    metadata JSONB,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ===========================================
+-- TCO Calculations Table
+-- ===========================================
+CREATE TABLE IF NOT EXISTS tco_calculations (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    project_name VARCHAR(255),
+    total_cost DECIMAL(15, 2),
+    annual_tco DECIMAL(15, 2),
+    npv DECIMAL(15, 2),
+    roi DECIMAL(10, 2),
+    payback_period DECIMAL(10, 2),
+    breakdown JSONB,
+    calculated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ===========================================
+-- Indexes for Performance
+-- ===========================================
+CREATE INDEX IF NOT EXISTS idx_project_messages_project ON project_messages(project_id);
+CREATE INDEX IF NOT EXISTS idx_project_messages_created ON project_messages(created_at);
+CREATE INDEX IF NOT EXISTS idx_project_files_project ON project_files(project_id);
+CREATE INDEX IF NOT EXISTS idx_assets_project ON assets(project_id);
+CREATE INDEX IF NOT EXISTS idx_assets_supplier ON assets(supplier_id);
+CREATE INDEX IF NOT EXISTS idx_generated_files_project ON generated_files(project_id);
+CREATE INDEX IF NOT EXISTS idx_tco_calculations_project ON tco_calculations(project_id);
+CREATE INDEX IF NOT EXISTS idx_projects_status ON projects(status);
+CREATE INDEX IF NOT EXISTS idx_projects_current_step ON projects(current_step);
+
+-- ===========================================
+-- Functions and Triggers
+-- ===========================================
+
+-- Function to update updated_at timestamp
+CREATE OR REPLACE FUNCTION update_updated_at_column()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = CURRENT_TIMESTAMP;
+    RETURN NEW;
+END;
+$$ language 'plpgsql';
+
+-- Triggers for updated_at
+DROP TRIGGER IF EXISTS update_projects_updated_at ON projects;
+CREATE TRIGGER update_projects_updated_at
+    BEFORE UPDATE ON projects
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+DROP TRIGGER IF EXISTS update_suppliers_updated_at ON suppliers;
+CREATE TRIGGER update_suppliers_updated_at
+    BEFORE UPDATE ON suppliers
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+DROP TRIGGER IF EXISTS update_assets_updated_at ON assets;
+CREATE TRIGGER update_assets_updated_at
+    BEFORE UPDATE ON assets
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+-- ===========================================
+-- Comments for Documentation
+-- ===========================================
+COMMENT ON TABLE projects IS 'Main projects table storing factory planning projects';
+COMMENT ON COLUMN projects.current_step IS 'Current step in the workflow: chat, planning, planed, assetsImagesGenerating, assetsImagesGenerated, sourcing, sourced, negotiating, negotiated, cost_analysing, cost_analysed, completed';
+COMMENT ON COLUMN projects.planning_data IS 'JSON data containing the AI-generated factory plan';
+COMMENT ON COLUMN projects.metadata IS 'Flexible metadata including layout_progress and other project-specific data';
+
+COMMENT ON TABLE project_messages IS 'Chat messages between user and AI assistant';
+COMMENT ON TABLE project_files IS 'Files uploaded by users for the project';
+COMMENT ON TABLE assets IS 'Production assets/machines identified for the project';
+COMMENT ON TABLE suppliers IS 'Suppliers sourced for project assets';
+COMMENT ON TABLE generated_files IS 'Files generated by the system (layouts, images, reports)';
+COMMENT ON TABLE tco_calculations IS 'Total Cost of Ownership calculations and financial analysis';
+
+-- ===========================================
+-- Migration Complete
+-- ===========================================
+SELECT 'Database migration completed successfully!' as status;
+

@@ -39,6 +39,29 @@ router.post("/", async (req, res) => {
   }
 });
 
+router.get("/:id/layout-progress", async (req, res) => {
+  try {
+    const { id } = req.params;
+    logger.db("SELECT", "projects", { projectId: id });
+    const { data: project, error } = await supabase
+      .from("projects")
+      .select("metadata")
+      .eq("id", id)
+      .single();
+
+    if (error) {
+      logger.error("Error fetching layout progress", error, { projectId: id });
+      return res.status(500).json({ error: error.message });
+    }
+
+    const progress = project?.metadata?.layout_progress || null;
+    res.json({ progress });
+  } catch (error: any) {
+    logger.error("Error in GET /projects/:id/layout-progress", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 router.get("/", async (req, res) => {
   try {
     logger.info("Fetching all projects");

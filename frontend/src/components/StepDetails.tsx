@@ -1,9 +1,10 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState } from "react";
 import ReactMarkdown from "react-markdown";
-import { Heading, Text, Badge, StatusBadge, Code, Skeleton, Container } from "@medusajs/ui";
+import { Heading, Text, Badge, StatusBadge, Code, Skeleton, Container, Button } from "@medusajs/ui";
 import { Check } from "@medusajs/icons";
 import type { ProjectStep } from "../types";
 import { useStepTimer } from "../hooks/useStepTimer";
+import { planningApi } from "../services/api";
 
 import type { Supplier, GeneratedFile, TCOCalculation, ProjectMessage, Asset } from "../types";
 import { PlanningResponseView } from "./completed/PlanningResponseView";
@@ -12,6 +13,7 @@ import { AssetsResponseView } from "./completed/AssetsResponseView";
 import { SuppliersResponseView } from "./completed/SuppliersResponseView";
 import { CostAnalysisResponseView } from "./completed/CostAnalysisResponseView";
 import { ChatResponseView } from "./completed/ChatResponseView";
+import { FinancialReportsView } from "./completed/FinancialReportsView";
 
 interface StepDetailsProps {
   projectId: string;
@@ -20,8 +22,9 @@ interface StepDetailsProps {
   assets?: Asset[];
   suppliers?: Supplier[];
   generatedFiles?: GeneratedFile[];
-  tco?: TCOCalculation | null;
+  tco?: TCOCalculation | null | undefined;
   messages?: ProjectMessage[];
+  project?: any; // Project data including business_plan_excel
 }
 
 interface StreamUpdate {
@@ -31,7 +34,7 @@ interface StreamUpdate {
   asset?: { id: string; name: string };
   supplier?: { name: string; location: string; website?: string };
   imageUrl?: string;
-  layoutType?: "floor_plan" | "equipment_placement" | "atex_zones" | "agv_routing";
+  layoutType?: "floor_plan" | "atex_zones" | "agv_routing";
   progress?: number;
   total?: number;
   message?: string;
@@ -45,7 +48,8 @@ export function StepDetails({
   suppliers = [], 
   generatedFiles = [], 
   tco,
-  messages = []
+  messages = [],
+  project
 }: StepDetailsProps) {
   const [streamContent, setStreamContent] = useState<string>("");
   const [streamProgress, setStreamProgress] = useState<number>(0);
@@ -53,11 +57,12 @@ export function StepDetails({
   const [streamSuppliers, setStreamSuppliers] = useState<Map<string, any[]>>(new Map());
   const [streamLayouts, setStreamLayouts] = useState<Map<string, string>>(new Map());
   const [isStreaming, setIsStreaming] = useState(false);
+  const [isForcingNext, setIsForcingNext] = useState(false);
   
   // Determine if current step involves text streaming
   const textStreamingSteps: ProjectStep[] = ["planning", "cost_analysing", "layoutGenerating"];
   const isTextStreamingStep = textStreamingSteps.includes(currentStep);
-  const { elapsedSeconds, formattedTime } = useStepTimer(isStreaming && isTextStreamingStep);
+  const { formattedTime } = useStepTimer(isStreaming && isTextStreamingStep);
 
   useEffect(() => {
     setStreamContent("");
@@ -66,6 +71,7 @@ export function StepDetails({
     setStreamSuppliers(new Map());
     setStreamLayouts(new Map());
     setIsStreaming(false);
+    setIsForcingNext(false);
 
     const streamableSteps = ["planning", "layoutGenerating", "assetsImagesGenerating", "sourcing", "cost_analysing"];
     if (!streamableSteps.includes(currentStep)) return;
@@ -96,6 +102,9 @@ export function StepDetails({
           }
           if (data.layoutType && data.imageUrl) {
             setStreamLayouts((prev) => new Map(prev).set(data.layoutType!, data.imageUrl!));
+            if (data.progress !== undefined) {
+              setStreamProgress(data.progress);
+            }
           }
         }
       } catch (error) {
@@ -179,8 +188,16 @@ export function StepDetails({
         );
 
       case "layoutGenerating":
+        const layoutNames: Record<string, string> = {
+          floor_plan: "Factory Floor Plan",
+          atex_zones: "ATEX Zones",
+          agv_routing: "AGV Routing",
+        };
+        
+        const layoutOrder = ["floor_plan", "atex_zones", "agv_routing"];
+        
         return (
-          <Container className="flex flex-col gap-y-3">
+          <Container className="flex flex-col gap-y-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-x-2">
                 <div className="w-2 h-2 bg-ui-bg-interactive rounded-full animate-pulse" />
@@ -204,26 +221,52 @@ export function StepDetails({
                 )}
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              {["floor_plan", "equipment_placement", "atex_zones", "agv_routing"].map((layoutType) => {
+            
+            <div className="space-y-6">
+              {layoutOrder.map((layoutType) => {
                 const imageUrl = streamLayouts.get(layoutType);
-                const layoutNames: Record<string, string> = {
-                  floor_plan: "Factory Floor Plan",
-                  equipment_placement: "Equipment Placement",
-                  atex_zones: "ATEX Zones",
-                  agv_routing: "AGV Routing",
-                };
+                
                 return (
-                  <Container key={layoutType} className="p-3">
-                    <Text weight="plus" size="small" className="mb-2">{layoutNames[layoutType]}</Text>
+                  <div key={layoutType} className="flex flex-col gap-y-3">
+                    {/* Layout Header */}
+                    <div className="flex items-center justify-between">
+                      <Text weight="plus" size="small">{layoutNames[layoutType]}</Text>
+                      {imageUrl && (
+                        <Badge color="green" size="small">Generated</Badge>
+                      )}
+                    </div>
+                    
+                    {/* Image Display */}
                     {imageUrl ? (
-                      <div className="w-full h-48 bg-white rounded border border-ui-border-base flex items-center justify-center overflow-hidden">
-                        <img src={imageUrl} alt={layoutNames[layoutType]} className="max-w-full max-h-full object-contain" />
+                      <div className="w-full bg-white rounded border border-ui-border-base flex items-center justify-center overflow-hidden relative group" style={{ minHeight: "400px" }}>
+                        <img 
+                          src={imageUrl} 
+                          alt={layoutNames[layoutType]} 
+                          className="max-w-full max-h-full object-contain cursor-pointer hover:opacity-90 transition-opacity"
+                          onError={(e) => {
+                            const target = e.target as HTMLImageElement;
+                            target.style.display = 'none';
+                            const errorDiv = document.createElement('div');
+                            errorDiv.className = 'text-sm text-ui-fg-subtle p-4 text-center';
+                            errorDiv.textContent = 'Failed to load image. Please refresh the page.';
+                            target.parentElement?.appendChild(errorDiv);
+                          }}
+                          onClick={() => {
+                            window.open(imageUrl, '_blank');
+                          }}
+                        />
+                        <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <Badge color="grey" size="small" className="cursor-pointer">
+                            Click to view full size
+                          </Badge>
+                        </div>
                       </div>
                     ) : (
-                      <Skeleton className="w-full h-48 rounded" />
+                      <div className="w-full bg-ui-bg-subtle rounded border border-ui-border-base flex items-center justify-center" style={{ minHeight: "400px" }}>
+                        <Skeleton className="w-full" style={{ minHeight: "400px" }} />
+                      </div>
                     )}
-                  </Container>
+                  </div>
                 );
               })}
             </div>
@@ -239,13 +282,64 @@ export function StepDetails({
         );
 
       case "assetsImagesGenerating":
+        // Combine stream assets with existing assets from database
+        const displayedAssets = new Map<string, any>();
+        
+        // First, add assets from database that already have images
+        assets.forEach(asset => {
+          if (asset.image_url && asset.image_generated) {
+            displayedAssets.set(asset.id, {
+              id: asset.id,
+              name: asset.name,
+              imageUrl: asset.image_url
+            });
+          }
+        });
+        
+        // Then, add/update with stream assets (these take precedence if streaming)
+        streamAssets.forEach((streamAsset, id) => {
+          displayedAssets.set(id, streamAsset);
+        });
+        
+        const allImagesGenerated = displayedAssets.size >= assets.length && assets.length > 0;
+        const hasExistingImages = assets.some(a => a.image_url && a.image_generated);
+        
+        const handleForceNext = async () => {
+          setIsForcingNext(true);
+          try {
+            await planningApi.retryStep(projectId);
+            // Reload the page after a short delay to show the new step
+            setTimeout(() => {
+              window.location.reload();
+            }, 1000);
+          } catch (error) {
+            console.error("Error forcing next step:", error);
+            setIsForcingNext(false);
+          }
+        };
+        
         return (
           <Container className="flex flex-col gap-y-3">
-            <Text size="small" className="text-ui-fg-subtle">
-              Generating {streamAssets.size} / {assets.length} images...
-            </Text>
+            <div className="flex items-center justify-between">
+              <Text size="small" className="text-ui-fg-subtle">
+                {hasExistingImages && !isStreaming 
+                  ? `Loaded ${displayedAssets.size} / ${assets.length} images...`
+                  : `Generating ${displayedAssets.size} / ${assets.length} images...`
+                }
+              </Text>
+              {allImagesGenerated && !isStreaming && (
+                <Button 
+                  onClick={handleForceNext} 
+                  variant="secondary" 
+                  size="small"
+                  disabled={isForcingNext}
+                >
+                  {isForcingNext ? "Moving to next step..." : "Force Next Step"}
+                </Button>
+              )}
+            </div>
             <div className="grid grid-cols-2 gap-3">
-              {Array.from(streamAssets.values()).map((asset) => (
+              {Array.from(displayedAssets.values()).map((asset) => (
                 <Container key={asset.id} className="p-3">
                   <Text weight="plus" size="small" className="mb-2">{asset.name}</Text>
                   {asset.imageUrl && (
@@ -255,7 +349,7 @@ export function StepDetails({
                   )}
                 </Container>
               ))}
-              {assets.filter((a) => !streamAssets.has(a.id)).map((asset) => (
+              {assets.filter((a) => !displayedAssets.has(a.id)).map((asset) => (
                 <Container key={asset.id} className="p-3 opacity-50">
                   <Text weight="plus" size="small" className="mb-2">{asset.name}</Text>
                   <Skeleton className="w-full h-24 rounded" />
@@ -405,7 +499,10 @@ export function StepDetails({
               <SuppliersResponseView suppliers={suppliers} />
 
               {/* 6. Cost Analysis Response */}
-              <CostAnalysisResponseView tco={tco} />
+              <CostAnalysisResponseView tco={tco ?? null} projectId={projectId} />
+
+              {/* 7. Financial Reports */}
+              <FinancialReportsView tco={tco ?? null} project={project ?? null} />
             </div>
           </div>
         );

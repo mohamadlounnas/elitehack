@@ -91,5 +91,10 @@ export const dataApi = {
     const { data } = await api.get(`/projects/${projectId}/tco`);
     return data;
   },
+
+  getLayoutProgress: async (projectId: string) => {
+    const { data } = await api.get(`/projects/${projectId}/layout-progress`);
+    return data;
+  },
 };
 

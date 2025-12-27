@@ -17,7 +17,6 @@ export function LayoutResponseView({ layoutFiles }: LayoutResponseViewProps) {
   const layoutNames: Record<string, string> = {
     base_grid: "Base Grid",
     floor_plan: "Factory Floor Plan",
-    equipment_placement: "Equipment Placement",
     atex_zones: "ATEX Zones",
     agv_routing: "AGV Routing Paths",
   };

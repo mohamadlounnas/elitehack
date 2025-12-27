@@ -6,7 +6,7 @@ import { useEffect, useState, useRef } from "react";
  */
 export function useStepTimer(isActive: boolean) {
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
-  const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const startTimeRef = useRef<number | null>(null);
 
   useEffect(() => {
