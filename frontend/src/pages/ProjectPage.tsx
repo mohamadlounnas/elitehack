@@ -1,18 +1,21 @@
 import { useState, useEffect } from "react";
-import { useParams } from "react-router-dom";
+import { useParams, useLoaderData } from "react-router-dom";
 import { Heading, Text, Skeleton, Container } from "@medusajs/ui";
 import { TwoColumnPage } from "../components/layout/pages";
 import { ChatInterface } from "../components/ChatInterface";
 import { StepProgress } from "../components/StepProgress";
 import { StepDetails } from "../components/StepDetails";
-import { projectsApi, chatApi, planningApi, assetsApi } from "../services/api";
-import type { Project, ProjectMessage, Asset } from "../types";
+import { projectsApi, chatApi, planningApi, assetsApi, dataApi } from "../services/api";
+import type { Project, ProjectMessage, Asset, Supplier, GeneratedFile, TCOCalculation } from "../types";
 
 export function ProjectPage() {
   const { id } = useParams<{ id: string }>();
   const [project, setProject] = useState<Project | null>(null);
   const [messages, setMessages] = useState<ProjectMessage[]>([]);
   const [assets, setAssets] = useState<Asset[]>([]);
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [generatedFiles, setGeneratedFiles] = useState<GeneratedFile[]>([]);
+  const [tco, setTco] = useState<TCOCalculation | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
@@ -20,6 +23,7 @@ export function ProjectPage() {
       loadProject();
       loadMessages();
       loadAssets();
+      loadProjectData();
     }
   }, [id]);
 
@@ -28,8 +32,12 @@ export function ProjectPage() {
       const interval = setInterval(() => {
         loadProject();
         loadAssets();
+        loadProjectData();
       }, 5000);
       return () => clearInterval(interval);
+    } else if (project && project.current_step === "completed") {
+      // Load all data once when completed
+      loadProjectData();
     }
   }, [project?.current_step]);
 
@@ -62,6 +70,22 @@ export function ProjectPage() {
       if (error.code !== "ECONNABORTED" && error.name !== "CanceledError") {
         console.error("Error loading assets:", error);
       }
+    }
+  };
+
+  const loadProjectData = async () => {
+    if (!id) return;
+    try {
+      const [suppliersData, filesData, tcoData] = await Promise.all([
+        dataApi.getSuppliers(id).catch(() => []),
+        dataApi.getGeneratedFiles(id).catch(() => []),
+        dataApi.getTCO(id).catch(() => null),
+      ]);
+      setSuppliers(suppliersData || []);
+      setGeneratedFiles(filesData || []);
+      setTco(tcoData);
+    } catch (error) {
+      console.error("Error loading project data:", error);
     }
   };
 
@@ -121,13 +145,15 @@ export function ProjectPage() {
               currentStep={project.current_step}
               planningData={project.planning_data}
               assets={assets}
+              suppliers={suppliers}
+              generatedFiles={generatedFiles}
+              tco={tco}
+              messages={messages}
             />
           </div>
         </TwoColumnPage.Main>
         <TwoColumnPage.Sidebar>
-          <Container>
-            <StepProgress currentStep={project.current_step} onRetry={!isCompleted ? handleRetryStep : undefined} />
-          </Container>
+          <StepProgress currentStep={project.current_step} onRetry={!isCompleted ? handleRetryStep : undefined} />
         </TwoColumnPage.Sidebar>
       </TwoColumnPage>
     );

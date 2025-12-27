@@ -76,3 +76,20 @@ export const assetsApi = {
   },
 };
 
+export const dataApi = {
+  getSuppliers: async (projectId: string) => {
+    const { data } = await api.get(`/projects/${projectId}/suppliers`);
+    return data;
+  },
+
+  getGeneratedFiles: async (projectId: string) => {
+    const { data } = await api.get(`/projects/${projectId}/generated-files`);
+    return data;
+  },
+
+  getTCO: async (projectId: string) => {
+    const { data } = await api.get(`/projects/${projectId}/tco`);
+    return data;
+  },
+};
+

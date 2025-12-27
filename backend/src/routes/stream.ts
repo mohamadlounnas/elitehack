@@ -4,7 +4,9 @@ import { planningService } from "../services/ai/planningService.js";
 import { imageGenerationService } from "../services/imageGeneration.js";
 import { sourcingService } from "../services/ai/sourcingService.js";
 import { costAnalysisService } from "../services/ai/costAnalysisService.js";
+import { layoutGeneratorService } from "../services/layoutGenerator.js";
 import { stepOrchestrator } from "../services/stepOrchestrator.js";
+import { logger } from "../utils/logger.js";
 
 const router = Router();
 
@@ -17,6 +19,7 @@ const runningSteps = new Set<string>();
  */
 router.get("/:id/stream", async (req, res) => {
   const { id } = req.params;
+  logger.info("SSE stream connection opened", { projectId: id });
 
   // Set up SSE headers
   res.setHeader("Content-Type", "text/event-stream");
@@ -28,10 +31,12 @@ router.get("/:id/stream", async (req, res) => {
   const sendEvent = (event: string, data: any) => {
     res.write(`event: ${event}\n`);
     res.write(`data: ${JSON.stringify(data)}\n\n`);
+    logger.debug("SSE event sent", { projectId: id, event, step: data.step });
   };
 
   try {
     // Get current project state
+    logger.db("SELECT", "projects", { projectId: id });
     const { data: project } = await supabase
       .from("projects")
       .select("current_step")
@@ -39,6 +44,7 @@ router.get("/:id/stream", async (req, res) => {
       .single();
 
     if (!project) {
+      logger.warn("Project not found for stream", { projectId: id });
       sendEvent("error", { message: "Project not found" });
       res.end();
       return;
@@ -46,9 +52,11 @@ router.get("/:id/stream", async (req, res) => {
 
     const currentStep = project.current_step;
     const stepKey = `${id}:${currentStep}`;
+    logger.info("Stream initialized for step", { projectId: id, step: currentStep });
 
     // Check if step is already running
     if (runningSteps.has(stepKey)) {
+      logger.info("Step already running, monitoring existing execution", { projectId: id, step: currentStep });
       sendEvent("status", { step: currentStep, message: "Step is already running..." });
       // Just monitor the existing execution
       res.end();
@@ -57,12 +65,16 @@ router.get("/:id/stream", async (req, res) => {
 
     // Mark step as running
     runningSteps.add(stepKey);
+    logger.debug("Step marked as running", { projectId: id, step: currentStep, stepKey });
 
     try {
       // Handle different steps - execute them with streaming
       switch (currentStep) {
         case "planning":
           await streamPlanning(id, sendEvent);
+          break;
+        case "layoutGenerating":
+          await streamLayoutGeneration(id, sendEvent);
           break;
         case "assetsImagesGenerating":
           await streamImageGeneration(id, sendEvent);
@@ -82,10 +94,13 @@ router.get("/:id/stream", async (req, res) => {
     } finally {
       // Remove from running steps
       runningSteps.delete(stepKey);
+      logger.debug("Step removed from running steps", { projectId: id, step: currentStep });
     }
 
+    logger.info("SSE stream completed", { projectId: id, step: currentStep });
     res.end();
   } catch (error: any) {
+    logger.error("Error in SSE stream", error, { projectId: id });
     sendEvent("error", { message: error.message });
     res.end();
   }
@@ -168,6 +183,35 @@ async function streamSourcing(projectId: string, sendEvent: (event: string, data
     });
   } catch (error: any) {
     sendEvent("error", { step: "sourcing", message: error.message });
+  }
+}
+
+/**
+ * Stream layout generation progress
+ */
+async function streamLayoutGeneration(projectId: string, sendEvent: (event: string, data: any) => void) {
+  logger.info("Starting layout generation stream", { projectId });
+  sendEvent("status", { step: "layoutGenerating", message: "Starting layout generation..." });
+
+  try {
+    await layoutGeneratorService.generate2DLayoutWithStream(projectId, (update) => {
+      logger.debug("Layout generation update", { projectId, type: update.type, layoutType: update.layoutType, iteration: update.iteration });
+      sendEvent("update", {
+        step: "layoutGenerating",
+        type: update.type,
+        layoutType: update.layoutType,
+        imageUrl: update.imageUrl,
+        progress: update.progress,
+        total: update.total,
+      });
+    });
+
+    sendEvent("complete", { 
+      step: "layoutGenerating", 
+      message: "Layout generation complete!" 
+    });
+  } catch (error: any) {
+    sendEvent("error", { step: "layoutGenerating", message: error.message });
   }
 }
 

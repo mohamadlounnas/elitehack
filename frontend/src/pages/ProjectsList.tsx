@@ -1,16 +1,20 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
-import { Button, Heading, Text, Prompt, Input, Container } from "@medusajs/ui";
-import { Plus } from "@medusajs/icons";
+import { Heading, Text, Container, StatusBadge, Skeleton } from "@medusajs/ui";
+import { 
+  CheckCircleSolid, 
+  CircleHalfSolid, 
+  CircleDottedLine,
+  Calendar,
+  ArrowRight
+} from "@medusajs/icons";
 import { SingleColumnPage } from "../components/layout/pages";
 import { projectsApi } from "../services/api";
-import type { Project } from "../types";
+import type { Project, ProjectStep } from "../types";
 
 export function ProjectsList() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [showCreatePrompt, setShowCreatePrompt] = useState(false);
-  const [projectName, setProjectName] = useState("");
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -20,7 +24,11 @@ export function ProjectsList() {
   const loadProjects = async () => {
     try {
       const data = await projectsApi.getAll();
-      setProjects(data);
+      // Sort by most recently updated
+      const sorted = data.sort((a, b) => 
+        new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
+      );
+      setProjects(sorted);
     } catch (error) {
       console.error("Error loading projects:", error);
     } finally {
@@ -28,23 +36,20 @@ export function ProjectsList() {
     }
   };
 
-  const handleCreateProject = async () => {
-    if (!projectName.trim()) return;
-    try {
-      const project = await projectsApi.create(projectName.trim());
-      setShowCreatePrompt(false);
-      setProjectName("");
-      navigate(`/projects/${project.id}`);
-    } catch (error) {
-      console.error("Error creating project:", error);
-    }
-  };
-
   if (isLoading) {
     return (
       <SingleColumnPage>
-        <div className="flex items-center justify-center py-16">
-          <Text className="text-ui-fg-subtle">Loading...</Text>
+        <div className="flex flex-col gap-y-3">
+          <Heading level="h1">Projects</Heading>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {[1, 2, 3, 4, 5, 6].map((i) => (
+              <Container key={i} className="p-4">
+                <Skeleton className="h-6 w-3/4 mb-2" />
+                <Skeleton className="h-4 w-full mb-3" />
+                <Skeleton className="h-4 w-1/2" />
+              </Container>
+            ))}
+          </div>
         </div>
       </SingleColumnPage>
     );
@@ -52,74 +57,182 @@ export function ProjectsList() {
 
   return (
     <SingleColumnPage>
-      <Container className="divide-y p-0">
-        <div className="flex items-center justify-between px-6 py-4">
-          <Heading level="h1">Factory Planning Projects</Heading>
-          <Button size="small" variant="secondary" onClick={() => setShowCreatePrompt(true)}>
-            <Plus />
-            Create Project
-          </Button>
+      <div className="flex flex-col gap-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <Heading level="h1">Projects</Heading>
+            <Text size="small" className="text-ui-fg-subtle mt-1">
+              {projects.length} {projects.length === 1 ? "project" : "projects"}
+            </Text>
+          </div>
         </div>
 
         {projects.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-16 px-6">
-            <Text className="text-ui-fg-subtle mb-4">No projects yet. Create your first project to get started.</Text>
-            <Button onClick={() => setShowCreatePrompt(true)} variant="secondary">
-              <Plus />
-              Create Project
-            </Button>
-          </div>
+          <Container className="flex flex-col items-center justify-center py-16 px-6">
+            <div className="w-16 h-16 bg-ui-bg-subtle rounded-full flex items-center justify-center mb-4">
+              <CircleDottedLine className="w-8 h-8 text-ui-fg-muted" />
+            </div>
+            <Heading level="h2" className="mb-2">No projects yet</Heading>
+            <Text className="text-ui-fg-subtle text-center mb-6 max-w-md">
+              Create your first factory planning project to get started. Use the "Create Project" button in the sidebar.
+            </Text>
+          </Container>
         ) : (
-          <div className="divide-y">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {projects.map((project) => (
-              <div
+              <ProjectCard
                 key={project.id}
-                className="flex items-center justify-between px-6 py-4 hover:bg-ui-bg-subtle-hover cursor-pointer transition-colors"
+                project={project}
                 onClick={() => navigate(`/projects/${project.id}`)}
-              >
-                <div className="flex flex-col gap-y-1 flex-1 min-w-0">
-                  <Heading level="h2" className="truncate">{project.name}</Heading>
-                  {project.description && (
-                    <Text className="text-ui-fg-subtle text-sm line-clamp-1">{project.description}</Text>
-                  )}
-                  <div className="flex items-center gap-x-2 mt-1">
-                    <Text size="small" className="text-ui-fg-subtle capitalize">
-                      {project.current_step.replace(/([A-Z])/g, " $1").trim()}
-                    </Text>
-                    <Text size="small" className="text-ui-fg-muted">
-                      • {new Date(project.created_at).toLocaleDateString()}
-                    </Text>
-                  </div>
-                </div>
-              </div>
+              />
             ))}
           </div>
         )}
-      </Container>
-
-      <Prompt open={showCreatePrompt} onOpenChange={setShowCreatePrompt}>
-        <Prompt.Content>
-          <Prompt.Header>
-            <Prompt.Title>Create New Project</Prompt.Title>
-            <Prompt.Description>Enter a name for your new factory planning project.</Prompt.Description>
-          </Prompt.Header>
-          <Prompt.Body>
-            <Input
-              type="text"
-              value={projectName}
-              onChange={(e) => setProjectName(e.target.value)}
-              placeholder="Project name"
-              onKeyDown={(e) => {
-                if (e.key === "Enter") handleCreateProject();
-              }}
-            />
-          </Prompt.Body>
-          <Prompt.Footer>
-            <Prompt.Cancel>Cancel</Prompt.Cancel>
-            <Prompt.Action onClick={handleCreateProject}>Create</Prompt.Action>
-          </Prompt.Footer>
-        </Prompt.Content>
-      </Prompt>
+      </div>
     </SingleColumnPage>
   );
+}
+
+interface ProjectCardProps {
+  project: Project;
+  onClick: () => void;
+}
+
+/**
+ * Project card component with improved styling and status indicators
+ */
+function ProjectCard({ project, onClick }: ProjectCardProps) {
+  const stepInfo = getStepInfo(project.current_step);
+  const formattedDate = new Date(project.created_at).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+
+  return (
+    <Container
+      className="p-4 hover:shadow-elevation-card-hover cursor-pointer transition-all group border border-ui-border-base"
+      onClick={onClick}
+    >
+      <div className="flex flex-col gap-y-3">
+        {/* Header with status */}
+        <div className="flex items-start justify-between gap-x-2">
+          <div className="flex-1 min-w-0">
+            <Heading level="h3" className="truncate group-hover:text-ui-fg-interactive transition-colors">
+              {project.name}
+            </Heading>
+          </div>
+          <div className="flex-shrink-0">
+            {stepInfo.icon}
+          </div>
+        </div>
+
+        {/* Description */}
+        {project.description && (
+          <Text size="small" className="text-ui-fg-subtle line-clamp-2">
+            {project.description}
+          </Text>
+        )}
+
+        {/* Status badge */}
+        <div className="flex items-center gap-x-2">
+          <StatusBadge color={stepInfo.color} size="small">
+            {stepInfo.label}
+          </StatusBadge>
+        </div>
+
+        {/* Footer with date and arrow */}
+        <div className="flex items-center justify-between pt-2 border-t border-ui-border-base">
+          <div className="flex items-center gap-x-1.5">
+            <Calendar className="w-3.5 h-3.5 text-ui-fg-muted" />
+            <Text size="xsmall" className="text-ui-fg-muted">
+              {formattedDate}
+            </Text>
+          </div>
+          <ArrowRight className="w-4 h-4 text-ui-fg-muted group-hover:text-ui-fg-interactive transition-colors" />
+        </div>
+      </div>
+    </Container>
+  );
+}
+
+/**
+ * Get step information including icon, label, and color
+ */
+function getStepInfo(step: ProjectStep): {
+  icon: ReactNode;
+  label: string;
+  color: "green" | "blue" | "grey" | "orange";
+} {
+  const stepMap: Record<
+    ProjectStep,
+    { icon: ReactNode; label: string; color: "green" | "blue" | "grey" | "orange" }
+  > = {
+    chat: {
+      icon: <CircleDottedLine className="w-4 h-4 text-ui-fg-muted" />,
+      label: "Requirements",
+      color: "grey",
+    },
+    planning: {
+      icon: <CircleHalfSolid className="w-4 h-4 text-ui-fg-interactive" />,
+      label: "Planning",
+      color: "blue",
+    },
+    planed: {
+      icon: <CheckCircleSolid className="w-4 h-4 text-ui-tag-green-text" />,
+      label: "Planned",
+      color: "green",
+    },
+    assetsImagesGenerating: {
+      icon: <CircleHalfSolid className="w-4 h-4 text-ui-fg-interactive" />,
+      label: "Generating Images",
+      color: "blue",
+    },
+    assetsImagesGenerated: {
+      icon: <CheckCircleSolid className="w-4 h-4 text-ui-tag-green-text" />,
+      label: "Images Ready",
+      color: "green",
+    },
+    sourcing: {
+      icon: <CircleHalfSolid className="w-4 h-4 text-ui-fg-interactive" />,
+      label: "Sourcing",
+      color: "blue",
+    },
+    sourced: {
+      icon: <CheckCircleSolid className="w-4 h-4 text-ui-tag-green-text" />,
+      label: "Sourced",
+      color: "green",
+    },
+    negotiating: {
+      icon: <CircleHalfSolid className="w-4 h-4 text-ui-fg-interactive" />,
+      label: "Negotiating",
+      color: "blue",
+    },
+    negotiated: {
+      icon: <CheckCircleSolid className="w-4 h-4 text-ui-tag-green-text" />,
+      label: "Negotiated",
+      color: "green",
+    },
+    cost_analysing: {
+      icon: <CircleHalfSolid className="w-4 h-4 text-ui-fg-interactive" />,
+      label: "Cost Analysis",
+      color: "blue",
+    },
+    cost_analysed: {
+      icon: <CheckCircleSolid className="w-4 h-4 text-ui-tag-green-text" />,
+      label: "Analysis Complete",
+      color: "green",
+    },
+    completed: {
+      icon: <CheckCircleSolid className="w-4 h-4 text-ui-tag-green-text" />,
+      label: "Completed",
+      color: "green",
+    },
+  };
+
+  return stepMap[step] || {
+    icon: <CircleDottedLine className="w-4 h-4 text-ui-fg-muted" />,
+    label: step,
+    color: "grey",
+  };
 }

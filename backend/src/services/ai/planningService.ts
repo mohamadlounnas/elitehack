@@ -2,6 +2,7 @@ import { createLLM } from "../../utils/langchain.js";
 import { supabase } from "../../utils/supabase.js";
 import { HumanMessage, SystemMessage } from "@langchain/core/messages";
 import { stepOrchestrator } from "../stepOrchestrator.js";
+import { logger } from "../../utils/logger.js";
 
 type PlanningStreamCallback = (update: {
   type: "thinking" | "analyzing" | "generating" | "complete";
@@ -151,8 +152,13 @@ Return your analysis as a JSON object with this structure:
 
       // Create assets in database
       if (planningData.assets && Array.isArray(planningData.assets)) {
+        logger.info("Creating assets in database", { 
+          projectId, 
+          assetCount: planningData.assets.length 
+        });
         for (const asset of planningData.assets) {
-          await supabase.from("assets").insert({
+          logger.db("INSERT", "assets", { projectId, assetName: asset.name });
+          const { error: insertError } = await supabase.from("assets").insert({
             project_id: projectId,
             name: asset.name,
             type: asset.type,
@@ -161,7 +167,23 @@ Return your analysis as a JSON object with this structure:
             specifications: asset.specifications || {},
             image_generated: false,
           });
+          if (insertError) {
+            logger.error("Error inserting asset", insertError, { 
+              projectId, 
+              assetName: asset.name 
+            });
+          }
         }
+        logger.info("Assets created successfully", { 
+          projectId, 
+          assetCount: planningData.assets.length 
+        });
+      } else {
+        logger.warn("No assets found in planning data to create", { 
+          projectId,
+          hasAssets: !!planningData.assets,
+          assetsType: typeof planningData.assets
+        });
       }
 
       onUpdate({
@@ -286,8 +308,13 @@ Return your analysis as a JSON object with this structure:
 
       // Create assets in database
       if (planningData.assets && Array.isArray(planningData.assets)) {
+        logger.info("Creating assets in database (non-streaming)", { 
+          projectId, 
+          assetCount: planningData.assets.length 
+        });
         for (const asset of planningData.assets) {
-          await supabase.from("assets").insert({
+          logger.db("INSERT", "assets", { projectId, assetName: asset.name });
+          const { error: insertError } = await supabase.from("assets").insert({
             project_id: projectId,
             name: asset.name,
             type: asset.type,
@@ -296,7 +323,23 @@ Return your analysis as a JSON object with this structure:
             specifications: asset.specifications || {},
             image_generated: false,
           });
+          if (insertError) {
+            logger.error("Error inserting asset", insertError, { 
+              projectId, 
+              assetName: asset.name 
+            });
+          }
         }
+        logger.info("Assets created successfully (non-streaming)", { 
+          projectId, 
+          assetCount: planningData.assets.length 
+        });
+      } else {
+        logger.warn("No assets found in planning data to create (non-streaming)", { 
+          projectId,
+          hasAssets: !!planningData.assets,
+          assetsType: typeof planningData.assets
+        });
       }
 
       // Move to next step

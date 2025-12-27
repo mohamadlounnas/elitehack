@@ -2,6 +2,8 @@ export type ProjectStep =
   | "chat"
   | "planning"
   | "planed"
+  | "layoutGenerating"
+  | "layoutGenerated"
   | "assetsImagesGenerating"
   | "assetsImagesGenerated"
   | "sourcing"
@@ -87,8 +89,39 @@ export interface Supplier {
   location?: string;
   rating?: number;
   products?: any;
+  asset_suppliers?: Array<{
+    asset_id: string;
+    assets?: {
+      id: string;
+      name: string;
+    };
+  }>;
   created_at: string;
   updated_at: string;
+}
+
+export interface GeneratedFile {
+  id: string;
+  project_id: string;
+  filename: string;
+  file_type?: string;
+  file_path?: string;
+  storage_url?: string;
+  metadata?: {
+    type?: string;
+    layout_type?: string;
+  };
+  created_at: string;
+}
+
+export interface TCOCalculation {
+  id: string;
+  project_id: string;
+  total_cost?: number;
+  breakdown?: any;
+  roi?: number;
+  payback_period?: number;
+  created_at: string;
 }
 
 export interface StepStatus {

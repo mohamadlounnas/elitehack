@@ -1,5 +1,5 @@
-import { Button, Text, StatusBadge } from "@medusajs/ui";
-import { Check } from "@medusajs/icons";
+import { Button, Text, StatusBadge, Container, Divider, clx } from "@medusajs/ui";
+import { CircleDottedLine, CircleHalfSolid, CheckCircleSolid } from "@medusajs/icons";
 import type { ProjectStep } from "../types";
 
 interface StepProgressProps {
@@ -11,6 +11,8 @@ const steps: { step: ProjectStep; label: string }[] = [
   { step: "chat", label: "Chat & Requirements" },
   { step: "planning", label: "Planning" },
   { step: "planed", label: "Plan Complete" },
+  { step: "layoutGenerating", label: "Generating Layouts" },
+  { step: "layoutGenerated", label: "Layouts Complete" },
   { step: "assetsImagesGenerating", label: "Generating Images" },
   { step: "assetsImagesGenerated", label: "Images Complete" },
   { step: "sourcing", label: "Sourcing" },
@@ -25,54 +27,70 @@ const steps: { step: ProjectStep; label: string }[] = [
 export function StepProgress({ currentStep, onRetry }: StepProgressProps) {
   const currentStepIndex = steps.findIndex((s) => s.step === currentStep);
 
-  return (
-    <div className="flex flex-col gap-y-1">
-      {steps.map((stepItem, index) => {
-        const isCompleted = index < currentStepIndex;
-        const isActive = index === currentStepIndex;
+  const getStepStatus = (index: number): "not-started" | "in-progress" | "completed" => {
+    if (index < currentStepIndex) return "completed";
+    if (index === currentStepIndex) return "in-progress";
+    return "not-started";
+  };
 
-        return (
-          <div key={stepItem.step} className="flex items-center gap-x-3 py-2">
-            <div
-              className={`flex items-center justify-center w-6 h-6 rounded-full border-2 flex-shrink-0 ${
-                isCompleted
-                  ? "bg-ui-tag-green-bg border-ui-tag-green-border"
-                  : isActive
-                  ? "bg-ui-bg-interactive border-ui-border-interactive"
-                  : "bg-ui-bg-subtle border-ui-border-base"
-              }`}
-            >
-              {isCompleted ? (
-                <Check className="w-4 h-4 text-ui-tag-green-text" />
-              ) : (
-                <Text size="small" weight="plus" className={isActive ? "text-ui-fg-on-color" : "text-ui-fg-muted"}>
-                  {index + 1}
-                </Text>
+  return (
+    <Container className="divide-y p-0">
+      <div className="px-6 py-4">
+        <Text size="small" weight="plus" leading="compact" className="text-ui-fg-subtle">
+          Workflow Progress
+        </Text>
+      </div>
+      <div className="flex flex-col gap-y-0.5 px-3 py-3">
+        {steps.map((stepItem, index) => {
+          const status = getStepStatus(index);
+          const isCompleted = status === "completed";
+          const isActive = status === "in-progress";
+
+          const Icon = isCompleted ? CheckCircleSolid : isActive ? CircleHalfSolid : CircleDottedLine;
+
+          return (
+            <div key={stepItem.step} className="flex items-center gap-x-3 py-2">
+              <div className="flex size-6 items-center justify-center flex-shrink-0">
+                <Icon
+                  className={clx({
+                    "text-ui-tag-green-text": isCompleted,
+                    "text-ui-fg-interactive": isActive,
+                    "text-ui-fg-muted": !isCompleted && !isActive,
+                  })}
+                />
+              </div>
+              <Text
+                size="small"
+                weight={isActive ? "plus" : "regular"}
+                leading="compact"
+                className={clx({
+                  "text-ui-fg-base": isActive,
+                  "text-ui-fg-subtle": isCompleted,
+                  "text-ui-fg-muted": !isCompleted && !isActive,
+                })}
+              >
+                {stepItem.label}
+              </Text>
+              {isActive && (
+                <StatusBadge color="blue" size="small" className="ml-auto">
+                  Active
+                </StatusBadge>
               )}
             </div>
-            <Text
-              size="small"
-              weight={isActive ? "plus" : "regular"}
-              className={
-                isActive
-                  ? "text-ui-fg-base"
-                  : isCompleted
-                  ? "text-ui-fg-subtle"
-                  : "text-ui-fg-muted"
-              }
-            >
-              {stepItem.label}
-            </Text>
-            {isActive && <StatusBadge color="blue" size="small">Active</StatusBadge>}
-          </div>
-        );
-      })}
+          );
+        })}
+      </div>
 
       {currentStep !== "chat" && currentStep !== "completed" && onRetry && (
-        <Button onClick={onRetry} variant="secondary" className="w-full mt-3">
-          Retry Step
-        </Button>
+        <>
+          <Divider />
+          <div className="px-6 py-4">
+            <Button onClick={onRetry} variant="secondary" className="w-full">
+              Retry Step
+            </Button>
+          </div>
+        </>
       )}
-    </div>
+    </Container>
   );
 }

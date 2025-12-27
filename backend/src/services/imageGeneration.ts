@@ -1,6 +1,7 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { supabase } from "../utils/supabase.js";
 import { stepOrchestrator } from "./stepOrchestrator.js";
+import { logger } from "../utils/logger.js";
 import dotenv from "dotenv";
 
 dotenv.config();
@@ -65,9 +66,9 @@ class ImageGenerationService {
           });
 
           // Generate image using Gemini 2.5 Flash Image model
-          const imageUrl = await this.generateImage(
-            asset.appearance || asset.description || asset.name
-          );
+          // Prioritize appearance field which contains AI-generated detailed description
+          const imageDescription = asset.appearance || asset.description || asset.name;
+          const imageUrl = await this.generateImage(imageDescription);
 
           // Update asset with image
           await supabase
@@ -120,27 +121,71 @@ class ImageGenerationService {
    */
   async generateImagesForProject(projectId: string): Promise<void> {
     try {
+      logger.info("Starting image generation for project", { projectId });
+      logger.db("SELECT", "assets", { projectId, image_generated: false });
+      
       // Find assets that need images
-      const { data: assets } = await supabase
+      const { data: assets, error: assetsError } = await supabase
         .from("assets")
         .select("*")
         .eq("project_id", projectId)
         .eq("image_generated", false);
 
+      if (assetsError) {
+        logger.error("Error fetching assets for image generation", assetsError, { projectId });
+        throw assetsError;
+      }
+
       if (!assets || assets.length === 0) {
+        logger.info("No assets found that need image generation, checking all assets", { projectId });
+        
+        // Check if there are any assets at all
+        const { data: allAssets } = await supabase
+          .from("assets")
+          .select("id, name, image_generated")
+          .eq("project_id", projectId);
+        
+        logger.info("Total assets in project", { 
+          projectId, 
+          totalAssets: allAssets?.length || 0,
+          assetsWithImages: allAssets?.filter(a => a.image_generated).length || 0,
+          assetsWithoutImages: allAssets?.filter(a => !a.image_generated).length || 0
+        });
+        
         // All images generated, move to next step
         await stepOrchestrator.nextStep(projectId);
         return;
       }
 
-      // Process each asset
-      for (const asset of assets) {
-        try {
-          // Generate image using Gemini 2.5 Flash Image model
-          const imageUrl = await this.generateImage(
-            asset.appearance || asset.description || asset.name
-          );
+      logger.info("Found assets needing image generation", { 
+        projectId, 
+        assetCount: assets.length,
+        assetNames: assets.map(a => a.name)
+      });
 
+      // Process each asset
+      for (let i = 0; i < assets.length; i++) {
+        const asset = assets[i];
+        try {
+          logger.info("Generating image for asset", { 
+            projectId, 
+            assetId: asset.id, 
+            assetName: asset.name,
+            progress: `${i + 1}/${assets.length}`
+          });
+          
+          // Generate image using Gemini 2.5 Flash Image model
+          // Prioritize appearance field which contains AI-generated detailed description
+          const imageDescription = asset.appearance || asset.description || asset.name;
+          logger.ai("Generating asset image", "gemini-2.5-flash-image", { 
+            projectId, 
+            assetId: asset.id,
+            descriptionLength: imageDescription.length 
+          });
+          
+          const imageUrl = await this.generateImage(imageDescription);
+
+          logger.db("UPDATE", "assets", { projectId, assetId: asset.id });
           // Update asset with image
           await supabase
             .from("assets")
@@ -150,15 +195,26 @@ class ImageGenerationService {
             })
             .eq("id", asset.id);
 
+          logger.info("Asset image generated successfully", { 
+            projectId, 
+            assetId: asset.id,
+            hasImageUrl: !!imageUrl
+          });
+
           // Small delay between generations to avoid rate limiting
           await new Promise((resolve) => setTimeout(resolve, 1000));
-        } catch (error) {
-          console.error(`Error generating image for asset ${asset.id}:`, error);
+        } catch (error: any) {
+          logger.error("Error generating image for asset", error, { 
+            projectId, 
+            assetId: asset.id,
+            assetName: asset.name
+          });
           // Continue with next asset even if one fails
         }
       }
 
       // Check if all assets are done
+      logger.db("SELECT", "assets", { projectId, image_generated: false });
       const { data: remainingAssets } = await supabase
         .from("assets")
         .select("id")
@@ -166,14 +222,21 @@ class ImageGenerationService {
         .eq("image_generated", false);
 
       if (!remainingAssets || remainingAssets.length === 0) {
+        logger.info("All asset images generated, moving to next step", { projectId });
+        logger.db("UPDATE", "projects", { projectId, newStep: "assetsImagesGenerated" });
         await supabase
           .from("projects")
           .update({ current_step: "assetsImagesGenerated" })
           .eq("id", projectId);
         await stepOrchestrator.nextStep(projectId);
+      } else {
+        logger.info("Some assets still need images", { 
+          projectId, 
+          remainingCount: remainingAssets.length 
+        });
       }
     } catch (error: any) {
-      console.error("Error in imageGenerationService.generateImagesForProject:", error);
+      logger.error("Error in imageGenerationService.generateImagesForProject", error, { projectId });
       throw error;
     }
   }
@@ -190,10 +253,18 @@ class ImageGenerationService {
         model: "models/gemini-2.5-flash-image",
       });
 
-      // Create a prompt for image generation
-      const prompt = `Generate a realistic, professional image of: ${description}. 
-      The image should be suitable for factory planning documentation and show the asset clearly. 
-      Make it detailed and accurate.`;
+      // Create a prompt for image generation with white background requirement
+      // The description parameter contains the AI-generated appearance description
+      const prompt = `Generate a realistic, professional product image based on this exact description: "${description}"
+
+CRITICAL REQUIREMENTS:
+- The asset must be isolated on a pure white background (RGB: 255, 255, 255) with no shadows, gradients, or background elements
+- The asset should be clearly visible and identifiable exactly as described in the appearance description
+- Professional product photography style, similar to e-commerce product images with clean, isolated presentation
+- High quality, detailed, and accurate representation matching the description precisely
+- The image should be suitable for factory planning documentation and technical specifications
+- Ensure every detail mentioned in the description is accurately represented in the image
+- The asset must appear exactly as it would in real life based on the provided appearance description`;
 
       // Generate content (image)
       const result = await model.generateContent(prompt);
@@ -231,10 +302,10 @@ class ImageGenerationService {
 
       // Fallback: If image generation doesn't return expected format,
       // return a placeholder
-      console.warn("Image generation returned unexpected format, using placeholder");
+      logger.warn("Image generation returned unexpected format, using placeholder", { descriptionLength: description.length });
       return `https://via.placeholder.com/400x300?text=${encodeURIComponent(description.substring(0, 50))}`;
     } catch (error: any) {
-      console.error("Error generating image with Gemini:", error);
+      logger.error("Error generating image with Gemini", error, { descriptionLength: description.length });
       // Fallback to placeholder on error
       return `https://via.placeholder.com/400x300?text=${encodeURIComponent(description.substring(0, 50))}`;
     }
