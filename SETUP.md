@@ -1,82 +1,83 @@
-# Setup & Run Guide
+# Setup Instructions
 
 ## Quick Start
 
-### 1. Install Dependencies
+### 1. Backend Setup
 
-**Backend:**
 ```bash
+cd backend
 npm install
 ```
 
-**Frontend:**
-```bash
-cd client
-npm install
-cd ..
-```
-
-### 2. Environment Variables
-
-**Backend `.env` (root directory):**
+Create `.env` file:
 ```env
-SUPABASE_URL=https://your-project.supabase.co
-SUPABASE_ANON_KEY=your_anon_key
-SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
-GEMINI_API_KEY=your_gemini_api_key
-PORT=3001
-NODE_ENV=development
+PORT=3000
+SUPABASE_URL=your_supabase_url
+SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
+GEMINI_API_KEY=AIzaSyDoflplqtb52hrNrFB3OWZ7JRxdshCdGbo
 ```
 
-**Frontend `.env` (client directory):**
-```env
-VITE_SUPABASE_URL=https://your-project.supabase.co
-VITE_SUPABASE_ANON_KEY=your_anon_key
-```
-
-### 3. Run Development Servers
-
-**Terminal 1 - Backend:**
+Start the backend:
 ```bash
 npm run dev
 ```
-Server runs on: http://localhost:3001
 
-**Terminal 2 - Frontend:**
+### 2. Frontend Setup
+
 ```bash
-cd client
+cd frontend
+npm install --legacy-peer-deps
+```
+
+Create `.env` file:
+```env
+VITE_SUPABASE_URL=your_supabase_url
+VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
+VITE_API_BASE_URL=http://localhost:3000/api
+```
+
+Start the frontend:
+```bash
 npm run dev
 ```
-Frontend runs on: http://localhost:3000
 
-### 4. Verify Setup
+### 3. Database
 
-1. Backend health check: http://localhost:3001/health
-2. Frontend: http://localhost:3000
-3. Create a new project and start chatting!
+The database schema has already been created via Supabase migration. The tables include:
+- `projects` - with `current_step`, `planning_data`, `cost_analysis_pdf`
+- `project_messages` - chat messages
+- `project_files` - uploaded files
+- `assets` - production assets/machines
+- `suppliers` - supplier information
+- And other supporting tables
 
-## Troubleshooting
+## Features Implemented
 
-### Mastra Package Issues
-If you get errors about `@mastra/core`, try:
-```bash
-npm install @mastra/core@latest
-```
+✅ ChatGPT-style interface with file uploads
+✅ Step-based workflow (12 steps from chat to completed)
+✅ Vertical stepper with progress indication
+✅ Retry functionality for failed steps
+✅ AI-powered planning using Google Gemini
+✅ 2D layout generation (placeholder)
+✅ Asset image generation (placeholder)
+✅ Supplier sourcing (placeholder)
+✅ Cost analysis with PDF generation
+✅ Database-driven state persistence
 
-### TypeScript Errors
-If you see TypeScript errors, ensure:
-- All dependencies are installed
-- `.env` files are properly configured
-- Supabase project is active and accessible
+## AI Integration
 
-### Database Connection
-Ensure your Supabase project is active and the database tables exist (they were created via migration).
+The system uses **Google Gemini** (Gemini Pro) for:
+- Chat interactions (lightweight)
+- Planning and analysis (complex reasoning)
+- Cost analysis and financial projections
 
-## Testing
+The Gemini API key is already configured in the code.
 
-Currently, basic manual testing:
-1. Create a project
-2. Send messages in the chat
-3. Watch the project status change automatically
-4. Check machines being generated in real-time
+## Next Steps for Production
 
+1. Replace placeholder image generation with actual service (Meshy3D or DALL-E)
+2. Implement real Google Search API integration for supplier sourcing
+3. Add 3D model generation step (currently skipped)
+4. Implement phone API integration for negotiations
+5. Enhance 2D layout generation with actual CAD/BIM libraries
+6. Add file upload to Supabase Storage
