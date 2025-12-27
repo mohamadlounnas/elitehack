@@ -118,8 +118,8 @@ export async function checkAllMachinesCompleted(projectId: string): Promise<bool
   const allCompleted = data.every((machine: { status: string }) => machine.status === 'completed');
   
   if (allCompleted) {
-    // Update project status to MACHINES_GENERATED
-    await updateProjectStatus(projectId, 'MACHINES_GENERATED');
+    // Update project status to PROJECT_COMPLETED
+    await updateProjectStatus(projectId, 'PROJECT_COMPLETED');
   }
 
   return allCompleted;

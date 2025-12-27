@@ -1,19 +1,21 @@
 /**
  * Type definitions for the Production Line Planning System
+ * Updated workflow: 6 steps including assets research, 2D layout, 3D model, and PDF report
  */
 
 export type ProjectStatus = 
   | 'DATA_COLLECTING'
   | 'CREATING_PROCCES'
-  | 'MACHINES_REASERCH'
-  | 'MACHINES_GENERATED';
+  | 'ASSETS_RESEARCH'
+  | 'GENERATING_2D_LAYOUT'
+  | 'GENERATING_3D_MODEL'
+  | 'PROJECT_COMPLETED';
 
-export type MachineStatus =
+export type AssetStatus =
   | 'pending'
-  | 'generating_image'
-  | 'generating_3d_model'
+  | 'researching'
   | 'completed'
-  | 'previous';
+  | 'error';
 
 export interface Project {
   id: string;
@@ -22,23 +24,31 @@ export interface Project {
   status: ProjectStatus;
   data_collecting_result: Record<string, unknown> | null;
   creating_procces_result: Record<string, unknown> | null;
+  layout_2d_url: string | null;
+  model_3d_url: string | null;
+  report_pdf_url: string | null;
   created_at: string;
   updated_at: string;
 }
 
-export interface Machine {
+export interface Asset {
   id: string;
   project_id: string;
   name: string;
-  appearance: string | null;
   description: string | null;
-  generated_image: string | null;
-  generated_3d_model: string | null;
-  status: MachineStatus;
+  appearance: string | null;
+  manufacturer: string | null;
+  country: string | null;
+  estimated_price: number | null;
+  shipping_estimated_price: number | null;
+  dimensions: Record<string, unknown> | null; // {length, width, height, unit}
+  weight: number | null;
+  weight_unit: string | null; // kg, lbs, etc.
   supplier_name: string | null;
   supplier_contact: string | null;
   supplier_url: string | null;
-  supplier_info: Record<string, unknown> | null;
+  supplier_info: Record<string, unknown> | null; // Additional supplier details
+  status: AssetStatus;
   error_message: string | null;
   created_at: string;
   updated_at: string;
@@ -53,13 +63,19 @@ export interface ChatMessage {
   created_at: string;
 }
 
-export interface MachineInput {
+export interface AssetInput {
   name: string;
-  appearance?: string;
   description?: string;
+  appearance?: string;
+  manufacturer?: string;
+  country?: string;
+  estimated_price?: number;
+  shipping_estimated_price?: number;
+  dimensions?: { length?: number; width?: number; height?: number; unit?: string };
+  weight?: number;
+  weight_unit?: string;
   supplier_name?: string;
   supplier_contact?: string;
   supplier_url?: string;
   supplier_info?: Record<string, unknown>;
 }
-

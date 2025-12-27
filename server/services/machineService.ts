@@ -196,7 +196,7 @@ export async function processMachineGeneration(machineId: string): Promise<void>
         console.log(`[MACHINE] Checking if all machines for project are completed...`);
         const allCompleted = await checkAllMachinesCompleted(currentMachine.data.project_id);
         if (allCompleted) {
-          console.log(`[MACHINE] ⚡ ALL MACHINES COMPLETED! Project status updated to MACHINES_GENERATED`);
+          console.log(`[MACHINE] ⚡ ALL MACHINES COMPLETED! Project status updated to PROJECT_COMPLETED`);
         } else {
           console.log(`[MACHINE] → Other machines still processing...`);
         }

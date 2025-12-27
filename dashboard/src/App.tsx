@@ -1,17 +1,20 @@
 /**
- * Main App Component
+ * Main App Component with Stepper System
  */
 
 import { useState, useEffect } from 'react';
 import { api } from './lib/api';
 import Sidebar from './components/Sidebar';
-import ChatInterface from './components/ChatInterface';
+import StepperNavigation from './components/StepperNavigation';
+import StepContent from './components/StepContent';
 import RightSidebar from './components/RightSidebar';
-import type { Project } from './types';
+import type { Project, ProjectStatus } from './types';
+import { supabase } from './lib/supabase';
 
 function App() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
+  const [selectedProject, setSelectedProject] = useState<Project | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -19,6 +22,33 @@ function App() {
     const interval = setInterval(loadProjects, 5000);
     return () => clearInterval(interval);
   }, []);
+
+  useEffect(() => {
+    if (selectedProjectId) {
+      loadProject(selectedProjectId);
+      
+      // Subscribe to project updates
+      const projectChannel = supabase
+        .channel(`project:${selectedProjectId}`)
+        .on(
+          'postgres_changes',
+          {
+            event: 'UPDATE',
+            schema: 'public',
+            table: 'projects',
+            filter: `id=eq.${selectedProjectId}`,
+          },
+          () => {
+            loadProject(selectedProjectId);
+          }
+        )
+        .subscribe();
+
+      return () => {
+        projectChannel.unsubscribe();
+      };
+    }
+  }, [selectedProjectId]);
 
   const loadProjects = async () => {
     try {
@@ -34,6 +64,15 @@ function App() {
     }
   };
 
+  const loadProject = async (projectId: string) => {
+    try {
+      const project = await api.getProject(projectId);
+      setSelectedProject(project);
+    } catch (error) {
+      console.error('Failed to load project:', error);
+    }
+  };
+
   const handleCreateProject = async (name: string) => {
     try {
       const newProject = await api.createProject({ name, description: '' });
@@ -43,6 +82,13 @@ function App() {
     } catch (error) {
       console.error('Failed to create project:', error);
       throw error;
+    }
+  };
+
+  const handleProjectUpdate = () => {
+    if (selectedProjectId) {
+      loadProject(selectedProjectId);
+      loadProjects();
     }
   };
 
@@ -65,11 +111,18 @@ function App() {
         onSelectProject={setSelectedProjectId}
         onCreateProject={handleCreateProject}
       />
-      {selectedProjectId ? (
-        <>
-          <ChatInterface projectId={selectedProjectId} />
-          <RightSidebar projectId={selectedProjectId} />
-        </>
+      {selectedProjectId && selectedProject ? (
+        <div className="flex-1 flex flex-col overflow-hidden">
+          <StepperNavigation currentStep={selectedProject.status} />
+          <div className="flex-1 flex overflow-hidden">
+            <StepContent
+              projectId={selectedProjectId}
+              project={selectedProject}
+              onProjectUpdate={handleProjectUpdate}
+            />
+            <RightSidebar projectId={selectedProjectId} />
+          </div>
+        </div>
       ) : (
         <div className="flex-1 flex items-center justify-center">
           <div className="text-center">
@@ -83,4 +136,3 @@ function App() {
 }
 
 export default App;
-

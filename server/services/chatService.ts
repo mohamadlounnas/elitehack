@@ -14,7 +14,7 @@ import { ProjectStatus } from '../types/index.js';
 import { HumanMessage, AIMessage, SystemMessage } from '@langchain/core/messages';
 import { createAgent, providerStrategy } from 'langchain';
 import { ChatGoogleGenerativeAI } from '@langchain/google-genai';
-import { MachinesListSchema } from '../schemas/machineSchema.js';
+import { AssetsListSchema } from '../schemas/assetSchema.js';
 import * as z from 'zod';
 import dotenv from 'dotenv';
 
@@ -108,7 +108,7 @@ export async function getLangChainHistory(projectId: string): Promise<Array<Huma
 /**
  * Send a chat message and get AI response
  * 
- * For MACHINES_REASERCH phase, uses structured output to extract machine data.
+ * For ASSETS_RESEARCH phase, uses structured output to extract asset data.
  * For other phases, uses regular chat without structured output.
  * 
  * @param projectId - The project ID this message belongs to
@@ -122,7 +122,7 @@ export async function sendChatMessage(
   projectId: string,
   userMessage: string,
   attachments: Record<string, unknown> | null = null
-): Promise<{ message: string; finishReason?: string; machines?: z.infer<typeof MachinesListSchema>['machines'] }> {
+): Promise<{ message: string; finishReason?: string; assets?: z.infer<typeof AssetsListSchema>['assets']; suggestions?: Array<{ action: string; label: string }> }> {
   // Save user message to database
   await saveMessage(projectId, 'user', userMessage, attachments);
 
@@ -144,9 +144,9 @@ export async function sendChatMessage(
     apiKey: apiKey,
   });
 
-  // For machine research phase, use structured output
-  if (project.status === 'MACHINES_REASERCH') {
-    console.log('[CHAT] Using structured output for machine research');
+  // For assets research phase, use structured output
+  if (project.status === 'ASSETS_RESEARCH') {
+    console.log('[CHAT] Using structured output for assets research');
     
     try {
       // Convert history messages to the format expected by createAgent
@@ -168,7 +168,7 @@ export async function sendChatMessage(
         model: model,
         tools: [],
         systemPrompt: systemInstruction,
-        responseFormat: providerStrategy(MachinesListSchema), // Try providerStrategy first
+        responseFormat: providerStrategy(AssetsListSchema), // Gemini supports native structured output
       });
 
       console.log('[CHAT] Invoking agent with', formattedMessages.length, 'messages...');
@@ -187,12 +187,12 @@ export async function sendChatMessage(
       const invokeDuration = Date.now() - invokeStartTime;
       console.log(`[CHAT] Agent invoke completed in ${invokeDuration}ms`);
       
-      // Get the structured response (machines data)
-      const structuredData = result.structuredResponse as z.infer<typeof MachinesListSchema> | undefined;
+      // Get the structured response (assets data)
+      const structuredData = result.structuredResponse as z.infer<typeof AssetsListSchema> | undefined;
       
       console.log('[CHAT] Structured response:', structuredData ? 'received' : 'none');
       if (structuredData) {
-        console.log('[CHAT] Machines count:', structuredData.machines?.length || 0);
+        console.log('[CHAT] Assets count:', structuredData.assets?.length || 0);
       }
       
       // Get the text response from the last assistant message
@@ -203,15 +203,21 @@ export async function sendChatMessage(
         ? lastMessage.content.map((c: unknown) => typeof c === 'string' ? c : String(c)).join('')
         : String(lastMessage.content);
 
-      // Save assistant response
-      await saveMessage(projectId, 'assistant', responseText);
+      // Clean message and extract suggestions
+      const cleanedMessage = cleanMessage(responseText);
+      const suggestions = extractSuggestions(responseText);
+      
+      // Save cleaned assistant response (without tags)
+      await saveMessage(projectId, 'assistant', cleanedMessage);
 
-      console.log('[CHAT] ✓ Structured output received:', structuredData ? `${structuredData.machines?.length || 0} machines` : 'none');
+      console.log('[CHAT] ✓ Structured output received:', structuredData ? `${structuredData.assets?.length || 0} assets` : 'none');
+      console.log('[CHAT] ✓ Suggestions extracted:', suggestions.length);
 
       return {
-        message: responseText,
+        message: cleanedMessage,
         finishReason: result.finishReason,
-        machines: structuredData?.machines || undefined,
+        assets: structuredData?.assets || undefined,
+        suggestions: suggestions.length > 0 ? suggestions : undefined,
       };
     } catch (error) {
       console.error('[CHAT] ✗ Error with structured output:', error);
@@ -232,11 +238,17 @@ export async function sendChatMessage(
         ? response.content.map((c: unknown) => typeof c === 'string' ? c : String(c)).join('')
         : String(response.content);
 
-      await saveMessage(projectId, 'assistant', responseText);
+      // Clean message and extract suggestions
+      const cleanedMessage = cleanMessage(responseText);
+      const suggestions = extractSuggestions(responseText);
+      
+      // Save cleaned assistant response (without tags)
+      await saveMessage(projectId, 'assistant', cleanedMessage);
 
       return {
-        message: responseText,
+        message: cleanedMessage,
         finishReason: (response as any).response_metadata?.finish_reason,
+        suggestions: suggestions.length > 0 ? suggestions : undefined,
       };
     }
   }
@@ -257,12 +269,17 @@ export async function sendChatMessage(
       ? response.content.map((c: unknown) => typeof c === 'string' ? c : String(c)).join('')
       : String(response.content);
 
-  // Save assistant response
-  await saveMessage(projectId, 'assistant', responseText);
+  // Clean message and extract suggestions
+  const cleanedMessage = cleanMessage(responseText);
+  const suggestions = extractSuggestions(responseText);
+  
+  // Save cleaned assistant response (without tags)
+  await saveMessage(projectId, 'assistant', cleanedMessage);
 
   return {
-    message: responseText,
+    message: cleanedMessage,
     finishReason: (response as any).response_metadata?.finish_reason,
+    suggestions: suggestions.length > 0 ? suggestions : undefined,
   };
 }
 
@@ -303,11 +320,17 @@ IMPORTANT RULES:
 - After you have collected sufficient information (at least 8-10 exchanges), you MUST end your response with EXACTLY this: [STATUS_CHANGE]CREATING_PROCCES
 - Do NOT use this tag until you have enough information to create a production plan
 - Be proactive: If the user gives incomplete answers, ask follow-up questions with examples
+- ALWAYS provide actionable suggestions at the end of your response using this format: [SUGGESTIONS]action1:Label 1|action2:Label 2[/SUGGESTIONS]
+- Suggestions should be contextual and help the user progress. Examples: "skip_to_process:Proceed to Planning", "provide_more_info:Tell me more about production volume"
+- NEVER show code blocks, JSON, or technical syntax in your responses - use natural language and markdown formatting
+- Use markdown for formatting: **bold**, *italic*, lists, headings. Keep it clean and readable.
 
 EXAMPLE FORMAT:
 User: "I want to make PVC pipes"
 You: "Great! Let's start with production volume. How many pipes do you need to produce per day or per hour? 
 For example, a small operation might produce 100-500 pipes per day, while larger facilities can produce 1000+ per day. What's your target?"
+
+[SUGGESTIONS]skip_to_process:Proceed to Planning|provide_volume:100-500 pipes/day|provide_volume:1000+ pipes/day[/SUGGESTIONS]
 
 When ready to proceed, your response must end with: [STATUS_CHANGE]CREATING_PROCCES`,
 
@@ -332,31 +355,36 @@ YOU MUST CREATE A DETAILED REPORT INCLUDING:
 9. Cost estimation breakdown (rough cost estimates)
 
 OUTPUT FORMAT: Write a comprehensive, well-structured report that's easy to understand. Use headings and bullet points. Explain technical terms when needed.
+- NEVER show code blocks, JSON, or technical syntax in your responses - use natural language and markdown formatting
+- Use markdown for formatting: **bold**, *italic*, lists, headings. Keep it clean and readable.
+- ALWAYS provide actionable suggestions at the end: [SUGGESTIONS]action1:Label 1|action2:Label 2[/SUGGESTIONS]
 
-WHEN COMPLETE: You MUST end your response with EXACTLY this: [STATUS_CHANGE]MACHINES_REASERCH
+WHEN COMPLETE: You MUST end your response with EXACTLY this: [STATUS_CHANGE]ASSETS_RESEARCH
 
 Do NOT use this tag until the production plan is complete and detailed.`,
 
-    MACHINES_REASERCH: `You are an AI assistant researching machines and suppliers for the production line. YOU MUST USE GOOGLE SEARCH to find real, current, and verified information. Your responses should be grounded in actual search results.
+    ASSETS_RESEARCH: `You are an AI assistant researching assets (machines, equipment, tools) and suppliers for the production line. YOU MUST USE GOOGLE SEARCH to find real, current, and verified information. Your responses should be grounded in actual search results.
 
 YOUR MISSION: Research and identify ALL specific machines, equipment, and suppliers needed for the production line. For EACH machine type needed, provide exactly 3 ALTERNATIVE PROPOSALS from different suppliers/manufacturers.
 
 MANDATORY RESEARCH PROCESS:
-1. Use Google Search to find current, accurate information about each machine type
-2. Search for multiple suppliers and alternatives for each machine (minimum 3 per machine type)
+1. Use Google Search to find current, accurate information about each asset type (machines, equipment, tools)
+2. Search for multiple suppliers and alternatives for each asset (minimum 3 per asset type)
 3. Verify that supplier websites and contact information are valid and current
-4. Check that the machine models and specifications exist and are accurate
+4. Check that the asset models and specifications exist and are accurate
 5. Verify all links, emails, phone numbers, and contact information are correct
 6. Cross-reference information from multiple sources to ensure accuracy
 7. Only include information from reputable sources (manufacturer websites, verified suppliers, official distributors)
 
 YOU MUST PROVIDE FOR EACH OF THE 3 ALTERNATIVES:
-- Specific machine models and names (exact model numbers - VERIFIED they exist via search)
-- Reputable suppliers and manufacturers (verified, existing companies - CHECK their websites via search)
+- Specific asset name and model numbers (VERIFIED they exist via search)
+- Manufacturer name and country of origin
+- Reputable suppliers (verified, existing companies - CHECK their websites via search)
 - Contact information (emails, phone numbers - VERIFY these are valid and current)
 - Website URLs (VERIFY these links work and are accessible - test them via search)
+- Estimated price and shipping costs (when available - use current market prices from verified sources)
+- Physical dimensions (length, width, height) and weight with units
 - Technical specifications (accurate, verified specs from official sources)
-- Pricing information (when available - use current market prices from verified sources)
 - Supplier location and delivery capabilities (verified information)
 
 VERIFICATION REQUIREMENTS - CRITICAL:
@@ -367,11 +395,35 @@ VERIFICATION REQUIREMENTS - CRITICAL:
 - Cross-check information from at least 2-3 sources for each supplier
 - Only include information from reputable sources (manufacturer websites, official distributors, verified suppliers)
 
-IMPORTANT: You will return the machines data in a structured format. Make sure to include ALL machines needed for the production line. For each machine type, provide exactly 3 alternatives.`,
+IMPORTANT: 
+- You will return the assets data in a structured format. Make sure to include ALL assets needed for the production line. For each asset type, provide exactly 3 alternatives with complete information including prices, dimensions, weights, and supplier details.
+- NEVER show code blocks, JSON, or technical syntax in your responses - use natural language and markdown formatting
+- Use markdown for formatting: **bold**, *italic*, lists, headings. Keep it clean and readable.
+- ALWAYS provide actionable suggestions at the end: [SUGGESTIONS]action1:Label 1|action2:Label 2[/SUGGESTIONS]`,
 
-    MACHINES_GENERATED: `You are an AI assistant. The production line planning is complete. All machines have been researched and generated. 
+    GENERATING_2D_LAYOUT: `You are an AI assistant helping to generate a 2D layout plan for the production line.
 
-Answer any questions the user has about the project, machines, or production line. You can provide summaries, explain details, or help with next steps. If the user asks to regenerate or retry machine generation, be helpful and acknowledge their request.`,
+The assets research is complete. The system is now generating a 2D layout visualization of the production line showing the arrangement of all assets, workflow, and spatial organization.
+
+- NEVER show code blocks, JSON, or technical syntax in your responses - use natural language and markdown formatting
+- Use markdown for formatting: **bold**, *italic*, lists, headings. Keep it clean and readable.
+- ALWAYS provide actionable suggestions at the end with the first one as the primary action (will auto-trigger): [SUGGESTIONS]next:Continue to 3D Model|retry:Regenerate Layout[/SUGGESTIONS]`,
+
+    GENERATING_3D_MODEL: `You are an AI assistant helping to generate a 3D model/CAD file for the production line.
+
+The 2D layout is complete. The system is now generating a detailed 3D model/CAD file showing the complete production line in three dimensions.
+
+- NEVER show code blocks, JSON, or technical syntax in your responses - use natural language and markdown formatting
+- Use markdown for formatting: **bold**, *italic*, lists, headings. Keep it clean and readable.
+- ALWAYS provide actionable suggestions at the end with the first one as the primary action (will auto-trigger): [SUGGESTIONS]next:Generate Final Report|retry:Regenerate 3D Model[/SUGGESTIONS]`,
+
+    PROJECT_COMPLETED: `You are an AI assistant. The production line planning project is complete. 
+
+All assets have been researched, 2D layout and 3D model generated, and PDF report created. Answer any questions the user has about the project, assets, or production line. You can provide summaries, explain details, or help with exporting results.
+
+- NEVER show code blocks, JSON, or technical syntax in your responses - use natural language and markdown formatting
+- Use markdown for formatting: **bold**, *italic*, lists, headings. Keep it clean and readable.
+- ALWAYS provide actionable suggestions at the end: [SUGGESTIONS]action1:Label 1|action2:Label 2[/SUGGESTIONS]`,
   };
 
   return instructions[status] || instructions.DATA_COLLECTING;
@@ -390,9 +442,62 @@ export function extractStatusChange(message: string): ProjectStatus | null {
   if (!match) return null;
   
   const status = match[1] as ProjectStatus;
-  const validStatuses: ProjectStatus[] = ['DATA_COLLECTING', 'CREATING_PROCCES', 'MACHINES_REASERCH', 'MACHINES_GENERATED'];
+  const validStatuses: ProjectStatus[] = ['DATA_COLLECTING', 'CREATING_PROCCES', 'ASSETS_RESEARCH', 'GENERATING_2D_LAYOUT', 'GENERATING_3D_MODEL', 'PROJECT_COMPLETED'];
   
   return validStatuses.includes(status) ? status : null;
+}
+
+/**
+ * Extract suggestions from AI response
+ * 
+ * The AI can provide actionable suggestions using [SUGGESTIONS]action1:Label 1|action2:Label 2[/SUGGESTIONS] format.
+ * 
+ * @param message - The AI response message
+ * @returns Array of suggestions with action and label, or empty array if none found
+ */
+export function extractSuggestions(message: string): Array<{ action: string; label: string; primary?: boolean }> {
+  const match = message.match(/\[SUGGESTIONS\](.*?)\[\/SUGGESTIONS\]/s);
+  if (!match) return [];
+  
+  const suggestionsText = match[1].trim();
+  const suggestions: Array<{ action: string; label: string; primary?: boolean }> = [];
+  
+  // Parse format: action1:Label 1|action2:Label 2
+  // First suggestion is marked as primary
+  const parts = suggestionsText.split('|');
+  for (let i = 0; i < parts.length; i++) {
+    const part = parts[i];
+    const colonIndex = part.indexOf(':');
+    if (colonIndex > 0) {
+      const action = part.substring(0, colonIndex).trim();
+      const label = part.substring(colonIndex + 1).trim();
+      if (action && label) {
+        suggestions.push({ 
+          action, 
+          label,
+          primary: i === 0, // First suggestion is primary
+        });
+      }
+    }
+  }
+  
+  return suggestions;
+}
+
+/**
+ * Clean message by removing suggestion tags and status change tags
+ * 
+ * @param message - The AI response message
+ * @returns Cleaned message without internal tags
+ */
+export function cleanMessage(message: string): string {
+  // Remove suggestion tags
+  let cleaned = message.replace(/\[SUGGESTIONS\].*?\[\/SUGGESTIONS\]/gs, '');
+  // Remove status change tags
+  cleaned = cleaned.replace(/\[STATUS_CHANGE\][A-Z_]+/g, '');
+  // Clean up extra whitespace
+  cleaned = cleaned.trim();
+  return cleaned;
 }
 
 /**

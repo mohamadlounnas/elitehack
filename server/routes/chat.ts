@@ -4,7 +4,7 @@
  */
 
 import express, { Router, Request, Response, NextFunction } from 'express';
-import { executeProjectWorkflow } from '../workflows/projectWorkflow.js';
+import { executeWorkflow } from '../workflows/projectWorkflow.js';
 import { getConversationHistory } from '../services/chatService.js';
 import { getProject } from '../services/projectService.js';
 
@@ -30,7 +30,7 @@ router.post('/:projectId', async (req: Request, res: Response, next: NextFunctio
     }
 
     // Execute workflow (handles chat and status transitions)
-    const result = await executeProjectWorkflow(projectId, message);
+    const result = await executeWorkflow(projectId, message);
 
     // Get updated project status
     const updatedProject = await getProject(projectId);
@@ -38,8 +38,7 @@ router.post('/:projectId', async (req: Request, res: Response, next: NextFunctio
     res.json({
       message: result.message,
       projectStatus: result.projectStatus || updatedProject.status,
-      machinesCreated: result.machinesCreated,
-      status: result.status,
+      suggestions: (result as any).suggestions,
     });
   } catch (error) {
     next(error);

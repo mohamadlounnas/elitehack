@@ -28,8 +28,10 @@ const STATUS_LABELS: Record<MachineStatus, string> = {
 const PROJECT_STATUS_LABELS: Record<ProjectStatus, string> = {
   DATA_COLLECTING: 'Data Collection',
   CREATING_PROCCES: 'Creating Process',
-  MACHINES_REASERCH: 'Machine Research',
-  MACHINES_GENERATED: 'Completed',
+  ASSETS_RESEARCH: 'Asset Research',
+  GENERATING_2D_LAYOUT: 'Generating 2D Layout',
+  GENERATING_3D_MODEL: 'Generating 3D Model',
+  PROJECT_COMPLETED: 'Completed',
 };
 
 export default function RightSidebar({ projectId }: RightSidebarProps) {
@@ -99,8 +101,10 @@ export default function RightSidebar({ projectId }: RightSidebarProps) {
     const stepOrder: ProjectStatus[] = [
       'DATA_COLLECTING',
       'CREATING_PROCCES',
-      'MACHINES_REASERCH',
-      'MACHINES_GENERATED',
+      'ASSETS_RESEARCH',
+      'GENERATING_2D_LAYOUT',
+      'GENERATING_3D_MODEL',
+      'PROJECT_COMPLETED',
     ];
     const currentIndex = stepOrder.indexOf(project.status);
     if (currentIndex === -1 || currentIndex === stepOrder.length - 1) {
@@ -154,7 +158,7 @@ export default function RightSidebar({ projectId }: RightSidebarProps) {
 
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         {/* Trigger Step Button */}
-        {project && getNextStep() && project.status !== 'MACHINES_REASERCH' && (
+        {project && getNextStep() && project.status !== 'ASSETS_RESEARCH' && (
           <Button
             onClick={handleTriggerStep}
             disabled={triggeringStep}
@@ -172,8 +176,8 @@ export default function RightSidebar({ projectId }: RightSidebarProps) {
           </Button>
         )}
 
-        {/* Machines Section - Only show in MACHINES_REASERCH or MACHINES_GENERATED */}
-        {(project?.status === 'MACHINES_REASERCH' || project?.status === 'MACHINES_GENERATED') && (
+        {/* Machines Section - Only show in ASSETS_RESEARCH or later */}
+        {(project?.status === 'ASSETS_RESEARCH' || project?.status === 'GENERATING_2D_LAYOUT' || project?.status === 'GENERATING_3D_MODEL' || project?.status === 'PROJECT_COMPLETED') && (
           <div>
             <div className="text-base font-semibold mb-3">Machines</div>
             <div className="space-y-3">

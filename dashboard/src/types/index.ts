@@ -5,8 +5,10 @@
 export type ProjectStatus = 
   | 'DATA_COLLECTING'
   | 'CREATING_PROCCES'
-  | 'MACHINES_REASERCH'
-  | 'MACHINES_GENERATED';
+  | 'ASSETS_RESEARCH'
+  | 'GENERATING_2D_LAYOUT'
+  | 'GENERATING_3D_MODEL'
+  | 'PROJECT_COMPLETED';
 
 export type MachineStatus =
   | 'pending'

@@ -38,7 +38,11 @@ export const api = {
 
   async sendChatMessage(projectId: string, message: string) {
     const response = await client.post(`/api/chat/${projectId}`, { message });
-    return response.data;
+    return response.data as {
+      message: string;
+      projectStatus?: string;
+      suggestions?: Array<{ action: string; label: string }>;
+    };
   },
 
   // Machines
