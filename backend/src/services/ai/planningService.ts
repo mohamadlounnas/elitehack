@@ -192,8 +192,7 @@ Return your analysis as a JSON object with this structure:
         progress: 100,
       });
 
-      // Move to next step
-      await stepOrchestrator.nextStep(projectId);
+      // Steps are now manually triggered - user must click "Next Step" button
     } catch (error: any) {
       console.error("Error in planningService.startPlanningWithStream:", error);
       // Update project step to indicate error
@@ -342,8 +341,7 @@ Return your analysis as a JSON object with this structure:
         });
       }
 
-      // Move to next step
-      await stepOrchestrator.nextStep(projectId);
+      // Steps are now manually triggered - user must click "Next Step" button
     } catch (error: any) {
       console.error("Error in planningService.startPlanning:", error);
       // Update project step to indicate error

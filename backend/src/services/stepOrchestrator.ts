@@ -79,6 +79,77 @@ class StepOrchestrator {
   }
 
   /**
+   * Gets the previous step in the workflow
+   */
+  private getPrevStep(currentStep: ProjectStep): ProjectStep | null {
+    const stepOrder = this.getStepOrder();
+    const currentIndex = stepOrder.indexOf(currentStep);
+    if (currentIndex <= 0) return null;
+    return stepOrder[currentIndex - 1];
+  }
+
+  /**
+   * Moves to the previous step in the workflow (without executing it)
+   */
+  async prevStep(projectId: string): Promise<void> {
+    try {
+      // Fetch current step from database
+      logger.db("SELECT", "projects", { projectId });
+      const { data: project, error: projectError } = await supabase
+        .from("projects")
+        .select("current_step")
+        .eq("id", projectId)
+        .single();
+
+      if (projectError) {
+        logger.error("Error fetching project in prevStep", projectError, { projectId });
+        throw new Error(`Failed to fetch project: ${projectError.message}`);
+      }
+
+      if (!project) {
+        logger.error("Project not found in prevStep", undefined, { projectId });
+        throw new Error("Project not found");
+      }
+
+      const currentStep = project.current_step as ProjectStep;
+      logger.workflow("prevStep", projectId, { currentStep });
+
+      const prevStep = this.getPrevStep(currentStep);
+      if (!prevStep) {
+        logger.info("No previous step available", { projectId, currentStep });
+        return;
+      }
+
+      // Atomic transition: Update step in database (without executing)
+      logger.workflow("transitioning", projectId, { from: currentStep, to: prevStep });
+      logger.db("UPDATE", "projects", { projectId, currentStep, prevStep });
+
+      const { error: updateError } = await supabase
+        .from("projects")
+        .update({ current_step: prevStep })
+        .eq("id", projectId);
+
+      if (updateError) {
+        logger.error("Error updating project step", updateError, {
+          projectId,
+          currentStep,
+          prevStep,
+        });
+        throw new Error(`Failed to update step: ${updateError.message}`);
+      }
+
+      logger.info("Step updated successfully (previous step)", {
+        projectId,
+        from: currentStep,
+        to: prevStep,
+      });
+    } catch (error: any) {
+      logger.error("Error in prevStep", error, { projectId });
+      throw error;
+    }
+  }
+
+  /**
    * Moves to the next step in the workflow
    * This should only be called after a step has completed successfully
    */
@@ -218,8 +289,8 @@ class StepOrchestrator {
           break;
 
         case "planed":
-          // Move to asset image generation after planning is complete
-          await this.nextStep(projectId);
+          // Steps are now manually triggered - user must click "Next Step" button
+          logger.info("Planning complete, waiting for manual step transition", { projectId });
           break;
 
         case "assetsImagesGenerating":
@@ -246,8 +317,8 @@ class StepOrchestrator {
             });
           }
 
-          // Move to next step (sourcing)
-          await this.nextStep(projectId);
+          // Steps are now manually triggered - user must click "Next Step" button
+          logger.info("Asset images complete, waiting for manual step transition", { projectId });
           break;
 
         case "sourcing":
@@ -256,22 +327,20 @@ class StepOrchestrator {
           break;
 
         case "sourced":
-          logger.info("Sourcing complete, moving to next step", { projectId });
-          // Move to negotiating after sourcing is complete
-          await this.nextStep(projectId);
+          logger.info("Sourcing complete, waiting for manual step transition", { projectId });
+          // Steps are now manually triggered - user must click "Next Step" button
           break;
 
         case "negotiating":
           logger.info("Starting negotiation step (bypassed)", { projectId });
           // Bypassed for now - just wait 5 seconds
           await new Promise((resolve) => setTimeout(resolve, 5000));
-          await this.nextStep(projectId);
+          // Steps are now manually triggered - user must click "Next Step" button
           break;
 
         case "negotiated":
-          logger.info("Negotiation complete, moving to next step", { projectId });
-          // Move to cost analysis after negotiation is complete
-          await this.nextStep(projectId);
+          logger.info("Negotiation complete, waiting for manual step transition", { projectId });
+          // Steps are now manually triggered - user must click "Next Step" button
           break;
 
         case "cost_analysing":
@@ -280,9 +349,8 @@ class StepOrchestrator {
           break;
 
         case "cost_analysed":
-          // Move to layout generation after cost analysis
-          logger.info("Cost analysis complete, moving to layout generation", { projectId });
-          await this.nextStep(projectId);
+          logger.info("Cost analysis complete, waiting for manual step transition", { projectId });
+          // Steps are now manually triggered - user must click "Next Step" button
           break;
 
         case "layoutGenerating":

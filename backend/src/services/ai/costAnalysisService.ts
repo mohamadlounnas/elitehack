@@ -221,7 +221,7 @@ class CostAnalysisService {
         progress: 100,
       });
 
-      await stepOrchestrator.nextStep(projectId);
+      // Steps are now manually triggered - user must click "Next Step" button
     } catch (error: any) {
       console.error("Error in costAnalysisService.analyzeCostsWithStream:", error);
       logger.error("Error in cost analysis", error, { projectId });
@@ -1040,6 +1040,25 @@ Be realistic and detailed. Use industry-standard percentages and calculations.`;
   }
 
   /**
+   * Sanitizes worksheet names to comply with Excel restrictions
+   * Excel worksheet names cannot contain: * ? : \ / [ ]
+   * Maximum length: 31 characters
+   */
+  private sanitizeWorksheetName(name: string): string {
+    // Replace invalid characters with underscore
+    let sanitized = name.replace(/[*?:\\\/[\]]/g, '_');
+    // Trim to max 31 characters (Excel limit)
+    if (sanitized.length > 31) {
+      sanitized = sanitized.substring(0, 31);
+    }
+    // Ensure it's not empty
+    if (!sanitized || sanitized.trim().length === 0) {
+      sanitized = 'Sheet';
+    }
+    return sanitized.trim();
+  }
+
+  /**
    * Generate comprehensive Excel business plan with ANDI/AAPI compliant format
    */
   private async generateBusinessPlanExcel(
@@ -1051,7 +1070,7 @@ Be realistic and detailed. Use industry-standard percentages and calculations.`;
     const workbook = new ExcelJS.Workbook();
     
     // Sheet 1: Executive Summary
-    const summarySheet = workbook.addWorksheet("Executive Summary");
+    const summarySheet = workbook.addWorksheet(this.sanitizeWorksheetName("Executive Summary"));
     summarySheet.columns = [
       { header: "Metric", key: "metric", width: 30 },
       { header: "Value", key: "value", width: 25 },
@@ -1075,7 +1094,7 @@ Be realistic and detailed. Use industry-standard percentages and calculations.`;
     };
 
     // Sheet 2: Initial Investment Breakdown
-    const investmentSheet = workbook.addWorksheet("Initial Investment");
+    const investmentSheet = workbook.addWorksheet(this.sanitizeWorksheetName("Initial Investment"));
     investmentSheet.columns = [
       { header: "Category", key: "category", width: 30 },
       { header: "Amount (€)", key: "amount", width: 20 },
@@ -1100,7 +1119,7 @@ Be realistic and detailed. Use industry-standard percentages and calculations.`;
     investmentSheet.getColumn(2).numFmt = '€#,##0.00';
 
     // Sheet 3: Annual Operating Costs
-    const operatingSheet = workbook.addWorksheet("Annual Operating Costs");
+    const operatingSheet = workbook.addWorksheet(this.sanitizeWorksheetName("Annual Operating Costs"));
     operatingSheet.columns = [
       { header: "Category", key: "category", width: 30 },
       { header: "Annual Cost (€)", key: "amount", width: 20 },
@@ -1124,7 +1143,7 @@ Be realistic and detailed. Use industry-standard percentages and calculations.`;
     operatingSheet.getColumn(2).numFmt = '€#,##0.00';
 
     // Sheet 4: 5-Year ROI Projections
-    const roiSheet = workbook.addWorksheet("5-Year ROI Projections");
+    const roiSheet = workbook.addWorksheet(this.sanitizeWorksheetName("5-Year ROI Projections"));
     roiSheet.columns = [
       { header: "Year", key: "year", width: 10 },
       { header: "Revenue (€)", key: "revenue", width: 20 },
@@ -1163,7 +1182,7 @@ Be realistic and detailed. Use industry-standard percentages and calculations.`;
 
     // Sheet 5: Asset-by-Asset Breakdown
     if (analysis.asset_costs.length > 0) {
-      const assetsSheet = workbook.addWorksheet("Asset Breakdown");
+      const assetsSheet = workbook.addWorksheet(this.sanitizeWorksheetName("Asset Breakdown"));
       assetsSheet.columns = [
         { header: "Asset Name", key: "name", width: 35 },
         { header: "Supplier", key: "supplier", width: 25 },
@@ -1200,7 +1219,7 @@ Be realistic and detailed. Use industry-standard percentages and calculations.`;
     }
 
     // Sheet 6: ANDI/AAPI Compliant Format
-    const andiSheet = workbook.addWorksheet("ANDI/AAPI Format");
+    const andiSheet = workbook.addWorksheet(this.sanitizeWorksheetName("ANDI_AAPI Format"));
     andiSheet.columns = [
       { header: "Field", key: "field", width: 40 },
       { header: "Value", key: "value", width: 50 },

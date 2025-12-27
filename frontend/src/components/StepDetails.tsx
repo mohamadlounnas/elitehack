@@ -133,6 +133,14 @@ export function StepDetails({
     };
   }, [projectId, currentStep]);
 
+  // Layout names and order - shared between layoutGenerating and layoutGenerated cases
+  const layoutNames: Record<string, string> = {
+    floor_plan: "Factory Floor Plan",
+    atex_zones: "ATEX Zones",
+    agv_routing: "AGV Routing",
+  };
+  const layoutOrder = ["floor_plan", "atex_zones", "agv_routing"];
+
   const renderContent = () => {
     switch (currentStep) {
       case "planning":
@@ -188,21 +196,13 @@ export function StepDetails({
         );
 
       case "layoutGenerating":
-        const layoutNames: Record<string, string> = {
-          floor_plan: "Factory Floor Plan",
-          atex_zones: "ATEX Zones",
-          agv_routing: "AGV Routing",
-        };
-        
-        const layoutOrder = ["floor_plan", "atex_zones", "agv_routing"];
-        
         return (
           <Container className="flex flex-col gap-y-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-x-2">
                 <div className="w-2 h-2 bg-ui-bg-interactive rounded-full animate-pulse" />
                 <Text size="small" className="text-ui-fg-subtle">
-                  Generating layouts... {streamLayouts.size} / 4
+                  Generating layouts... {streamLayouts.size} / {layoutOrder.length}
                 </Text>
               </div>
               <div className="flex items-center gap-x-3">
@@ -216,7 +216,7 @@ export function StepDetails({
                 )}
                 {streamProgress > 0 && (
                   <div className="w-48 bg-ui-bg-subtle rounded-full h-1.5">
-                    <div className="bg-ui-bg-interactive h-1.5 rounded-full transition-all" style={{ width: `${(streamProgress / 4) * 100}%` }} />
+                    <div className="bg-ui-bg-interactive h-1.5 rounded-full transition-all" style={{ width: `${(streamProgress / layoutOrder.length) * 100}%` }} />
                   </div>
                 )}
               </div>
@@ -273,13 +273,80 @@ export function StepDetails({
           </Container>
         );
 
-      case "layoutGenerated":
+      case "layoutGenerated": {
+        // Get layout files from generatedFiles
+        const layoutFiles = generatedFiles.filter(f => f.metadata?.type === "2d_layout");
+        
+        // Create a map of layout type to file for easy lookup
+        const layoutFileMap = new Map<string, GeneratedFile>();
+        layoutFiles.forEach(file => {
+          const layoutType = file.metadata?.layout_type;
+          if (layoutType) {
+            layoutFileMap.set(layoutType, file);
+          }
+        });
+        
         return (
-          <Container className="flex flex-col gap-y-3">
-            <StatusBadge color="green"><Check /> Layouts Generated</StatusBadge>
-            <Text size="small" className="text-ui-fg-subtle">All 2D layout diagrams have been generated.</Text>
+          <Container className="flex flex-col gap-y-4">
+            <div className="flex items-center gap-x-2">
+              <StatusBadge color="green"><Check /> Layouts Generated</StatusBadge>
+              <Text size="small" className="text-ui-fg-subtle">
+                All {layoutFiles.length} layout diagrams have been generated.
+              </Text>
+            </div>
+            
+            <div className="space-y-6">
+              {layoutOrder.map((layoutType) => {
+                const file = layoutFileMap.get(layoutType);
+                const imageUrl = file?.file_path;
+                
+                return (
+                  <div key={layoutType} className="flex flex-col gap-y-3">
+                    {/* Layout Header */}
+                    <div className="flex items-center justify-between">
+                      <Text weight="plus" size="small">{layoutNames[layoutType]}</Text>
+                      {imageUrl && (
+                        <Badge color="green" size="small">Complete</Badge>
+                      )}
+                    </div>
+                    
+                    {/* Image Display */}
+                    {imageUrl ? (
+                      <div className="w-full bg-white rounded border border-ui-border-base flex items-center justify-center overflow-hidden relative group" style={{ minHeight: "400px" }}>
+                        <img 
+                          src={imageUrl} 
+                          alt={layoutNames[layoutType]} 
+                          className="max-w-full max-h-full object-contain cursor-pointer hover:opacity-90 transition-opacity"
+                          onError={(e) => {
+                            const target = e.target as HTMLImageElement;
+                            target.style.display = 'none';
+                            const errorDiv = document.createElement('div');
+                            errorDiv.className = 'text-sm text-ui-fg-subtle p-4 text-center';
+                            errorDiv.textContent = 'Failed to load image. Please refresh the page.';
+                            target.parentElement?.appendChild(errorDiv);
+                          }}
+                          onClick={() => {
+                            window.open(imageUrl, '_blank');
+                          }}
+                        />
+                        <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <Badge color="grey" size="small" className="cursor-pointer">
+                            Click to view full size
+                          </Badge>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="w-full bg-ui-bg-subtle rounded border border-ui-border-base flex items-center justify-center" style={{ minHeight: "400px" }}>
+                        <Text size="small" className="text-ui-fg-muted">Layout not available</Text>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           </Container>
         );
+      }
 
       case "assetsImagesGenerating":
         // Combine stream assets with existing assets from database
@@ -465,7 +532,7 @@ export function StepDetails({
           </Container>
         );
 
-      case "completed":
+      case "completed": {
         const layoutFiles = generatedFiles.filter(f => f.metadata?.type === "2d_layout");
 
         return (
@@ -506,6 +573,7 @@ export function StepDetails({
             </div>
           </div>
         );
+      }
 
       default:
         return null;

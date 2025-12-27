@@ -67,6 +67,14 @@ export const planningApi = {
   retryStep: async (projectId: string): Promise<void> => {
     await api.post(`/projects/${projectId}/retry-step`);
   },
+
+  nextStep: async (projectId: string): Promise<void> => {
+    await api.post(`/projects/${projectId}/next-step`);
+  },
+
+  prevStep: async (projectId: string): Promise<void> => {
+    await api.post(`/projects/${projectId}/prev-step`);
+  },
 };
 
 export const assetsApi = {

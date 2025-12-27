@@ -92,15 +92,15 @@ router.get("/:id/stream", async (req, res) => {
               step: "assetsImagesGenerating", 
               message: "All images already generated. Moving to next step..." 
             });
-            // Update step and move forward
+            // Update step
             await supabase
               .from("projects")
               .update({ current_step: "assetsImagesGenerated" })
               .eq("id", id);
-            await stepOrchestrator.nextStep(id);
+            // Steps are now manually triggered - user must click "Next Step" button
             sendEvent("complete", { 
               step: "assetsImagesGenerated", 
-              message: "Moving to sourcing..." 
+              message: "Image generation complete. Click 'Next Step' to continue." 
             });
           } else {
             await streamImageGeneration(id, sendEvent);

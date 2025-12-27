@@ -1,11 +1,13 @@
 import { Button, Text, StatusBadge, Container, Divider, clx } from "@medusajs/ui";
-import { CircleDottedLine, CircleHalfSolid, CheckCircleSolid } from "@medusajs/icons";
+import { CircleDottedLine, CircleHalfSolid, CheckCircleSolid, ChevronLeft, ChevronRight } from "@medusajs/icons";
 import type { ProjectStep } from "../types";
 import { useStepTimer } from "../hooks/useStepTimer";
 
 interface StepProgressProps {
   currentStep: ProjectStep;
   onRetry?: () => void;
+  onNextStep?: () => void;
+  onPrevStep?: () => void;
 }
 
 const steps: { step: ProjectStep; label: string }[] = [
@@ -25,7 +27,7 @@ const steps: { step: ProjectStep; label: string }[] = [
   { step: "completed", label: "Completed" },
 ];
 
-export function StepProgress({ currentStep, onRetry }: StepProgressProps) {
+export function StepProgress({ currentStep, onRetry, onNextStep, onPrevStep }: StepProgressProps) {
   const currentStepIndex = steps.findIndex((s) => s.step === currentStep);
   const isActive = currentStepIndex >= 0 && steps[currentStepIndex].step === currentStep;
   const { formattedTime } = useStepTimer(isActive);
@@ -35,6 +37,9 @@ export function StepProgress({ currentStep, onRetry }: StepProgressProps) {
     if (index === currentStepIndex) return "in-progress";
     return "not-started";
   };
+
+  const canGoNext = currentStepIndex < steps.length - 1;
+  const canGoPrev = currentStepIndex > 0;
 
   return (
     <Container className="divide-y p-0">
@@ -89,13 +94,43 @@ export function StepProgress({ currentStep, onRetry }: StepProgressProps) {
         })}
       </div>
 
-      {currentStep !== "chat" && currentStep !== "completed" && onRetry && (
+      {(onNextStep || onPrevStep || onRetry) && (
         <>
           <Divider />
-          <div className="px-6 py-4">
-            <Button onClick={onRetry} variant="secondary" className="w-full">
-              Retry Step
-            </Button>
+          <div className="px-6 py-4 space-y-2">
+            {/* Navigation Buttons */}
+            {(onNextStep || onPrevStep) && (
+              <div className="flex gap-2">
+                {onPrevStep && (
+                  <Button 
+                    onClick={onPrevStep} 
+                    variant="secondary" 
+                    disabled={!canGoPrev}
+                    className="flex-1"
+                  >
+                    <ChevronLeft className="w-4 h-4 mr-1" />
+                    Previous
+                  </Button>
+                )}
+                {onNextStep && (
+                  <Button 
+                    onClick={onNextStep} 
+                    variant="primary"
+                    disabled={!canGoNext}
+                    className="flex-1"
+                  >
+                    Next
+                    <ChevronRight className="w-4 h-4 ml-1" />
+                  </Button>
+                )}
+              </div>
+            )}
+            {/* Retry Button */}
+            {currentStep !== "chat" && currentStep !== "completed" && onRetry && (
+              <Button onClick={onRetry} variant="secondary" className="w-full">
+                Retry Step
+              </Button>
+            )}
           </div>
         </>
       )}

@@ -34,3 +34,4 @@ SELECT 'generated_files', COUNT(*) FROM generated_files
 UNION ALL
 SELECT 'tco_calculations', COUNT(*) FROM tco_calculations;
 
+

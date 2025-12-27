@@ -122,6 +122,26 @@ export function ProjectPage() {
     }
   };
 
+  const handleNextStep = async () => {
+    if (!id) return;
+    try {
+      await planningApi.nextStep(id);
+      await loadProject();
+    } catch (error) {
+      console.error("Error moving to next step:", error);
+    }
+  };
+
+  const handlePrevStep = async () => {
+    if (!id) return;
+    try {
+      await planningApi.prevStep(id);
+      await loadProject();
+    } catch (error) {
+      console.error("Error moving to previous step:", error);
+    }
+  };
+
   if (!project) {
     return (
       <div className="flex items-center justify-center py-16">
@@ -154,7 +174,12 @@ export function ProjectPage() {
           </div>
         </TwoColumnPage.Main>
         <TwoColumnPage.Sidebar>
-          <StepProgress currentStep={project.current_step} onRetry={!isCompleted ? handleRetryStep : undefined} />
+          <StepProgress 
+            currentStep={project.current_step} 
+            onRetry={!isCompleted ? handleRetryStep : undefined}
+            onNextStep={handleNextStep}
+            onPrevStep={handlePrevStep}
+          />
         </TwoColumnPage.Sidebar>
       </TwoColumnPage>
     );

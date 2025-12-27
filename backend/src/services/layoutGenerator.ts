@@ -121,7 +121,7 @@ class LayoutGeneratorService {
         .update({ current_step: "layoutGenerated" })
         .eq("id", projectId);
       
-      await stepOrchestrator.nextStep(projectId);
+      // Steps are now manually triggered - user must click "Next Step" button
       console.log(`[LAYOUT GENERATION] Layout generation complete for project ${projectId}`);
     } catch (error: any) {
       console.error(`[LAYOUT GENERATION] ERROR in generate2DLayoutWithStream:`, error);
@@ -254,17 +254,17 @@ IMPORTANT: Generate ONE unified factory floor plan that integrates all equipment
       ];
 
       // Add reference example
-      const referenceImage = this.loadReferenceImage("atex_zones", "0.jpeg");
-      if (referenceImage) {
-        contentParts.push({
-          type: "image_url",
-          image_url: referenceImage,
-        });
-        contentParts.push({
-          type: "text",
-          text: "Example of ATEX zones",
-        });
-      }
+      // const referenceImage = this.loadReferenceImage("atex_zones", "0.jpeg");
+      // if (referenceImage) {
+      //   contentParts.push({
+      //     type: "image_url",
+      //     image_url: referenceImage,
+      //   });
+      //   contentParts.push({
+      //     type: "text",
+      //     text: "Example of ATEX zones (just to know )",
+      //   });
+      // }
 
       const prompt = `Add ATEX zone markings to this factory layout. Mark hazardous areas (Zone 0/20, Zone 1/21, Zone 2/22) and safe areas.`;
 
@@ -318,7 +318,21 @@ IMPORTANT: Generate ONE unified factory floor plan that integrates all equipment
         },
       ];
 
-      const prompt = `Add AGV routing paths to this factory layout. Show paths connecting production areas, storage, and loading docks. Include charging stations.`;
+      const prompt = `Add AGV routing paths to this factory layout. 
+
+CRITICAL REQUIREMENT: Draw all AGV routing paths in BRIGHT RED color (#FF0000 or RGB 255,0,0) to make them clearly visible and distinguishable from the rest of the layout.
+
+Show paths connecting:
+- Production areas
+- Storage areas
+- Loading docks
+- Include charging stations along the routes
+
+Make sure the RED routing paths are:
+- Clearly visible against the factory floor background
+- Thick enough to be easily seen (minimum 3-4 pixels wide)
+- Continuous lines showing the complete route network
+- Include directional arrows in RED if possible to show AGV movement direction`;
 
       contentParts.push({ type: "text", text: prompt });
       const message = new HumanMessage({ content: contentParts });

@@ -31,3 +31,4 @@ CREATE TRIGGER update_assets_updated_at
 -- ===========================================
 SELECT 'Assets table updated_at column fix completed successfully!' as status;
 
+

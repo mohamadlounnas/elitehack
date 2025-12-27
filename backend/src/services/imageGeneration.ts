@@ -95,8 +95,8 @@ class ImageGenerationService {
           if (updateError) {
             logger.error("Error updating step after images check", updateError, { projectId });
           } else {
-            logger.info("All images already exist, moving to next step", { projectId });
-            await stepOrchestrator.nextStep(projectId);
+            logger.info("All images already exist", { projectId });
+            // Steps are now manually triggered - user must click "Next Step" button
           }
           return; // Don't regenerate, just return
         }
@@ -110,9 +110,9 @@ class ImageGenerationService {
         .eq("image_generated", false);
 
       if (!assets || assets.length === 0) {
-        // All images generated, move to next step
-        logger.info("No assets need images, moving to next step", { projectId });
-        await stepOrchestrator.nextStep(projectId);
+        // All images generated
+        logger.info("No assets need images", { projectId });
+        // Steps are now manually triggered - user must click "Next Step" button
         return;
       }
 
@@ -231,13 +231,12 @@ class ImageGenerationService {
           throw new Error("Step update verification failed");
         }
 
-        logger.info("Step updated to assetsImagesGenerated, calling nextStep", { 
+        logger.info("Step updated to assetsImagesGenerated", { 
           projectId,
           verifiedStep: updatedProject.current_step 
         });
         
-        // Move to next step (sourcing)
-        await stepOrchestrator.nextStep(projectId);
+        // Steps are now manually triggered - user must click "Next Step" button
       } else {
         logger.warn("Some assets still need images after generation loop", { 
           projectId, 
@@ -304,8 +303,7 @@ class ImageGenerationService {
           assetsWithoutImages: allAssets?.filter(a => !a.image_generated).length || 0
         });
         
-        // All images generated, move to next step
-        await stepOrchestrator.nextStep(projectId);
+        // Steps are now manually triggered - user must click "Next Step" button
         return;
       }
 
@@ -374,13 +372,13 @@ class ImageGenerationService {
         .eq("image_generated", false);
 
       if (!remainingAssets || remainingAssets.length === 0) {
-        logger.info("All asset images generated, moving to next step", { projectId });
+        logger.info("All asset images generated", { projectId });
         logger.db("UPDATE", "projects", { projectId, newStep: "assetsImagesGenerated" });
         await supabase
           .from("projects")
           .update({ current_step: "assetsImagesGenerated" })
           .eq("id", projectId);
-        await stepOrchestrator.nextStep(projectId);
+        // Steps are now manually triggered - user must click "Next Step" button
       } else {
         logger.info("Some assets still need images", { 
           projectId, 

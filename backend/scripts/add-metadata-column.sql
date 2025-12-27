@@ -7,3 +7,4 @@ ADD COLUMN IF NOT EXISTS metadata JSONB DEFAULT '{}'::jsonb;
 -- Add a comment to document the column
 COMMENT ON COLUMN projects.metadata IS 'Stores flexible metadata including layout_progress, user preferences, and other project-specific data';
 
+

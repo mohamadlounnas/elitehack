@@ -23,3 +23,4 @@ export const ProgressBar = ({ duration = 2 }: ProgressBarProps) => {
   );
 };
 
+

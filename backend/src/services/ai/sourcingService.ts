@@ -26,7 +26,7 @@ class SourcingService {
         .eq("project_id", projectId);
 
       if (!assets || assets.length === 0) {
-        await stepOrchestrator.nextStep(projectId);
+        // Steps are now manually triggered - user must click "Next Step" button
         return;
       }
 
@@ -115,7 +115,7 @@ class SourcingService {
         .update({ current_step: "sourced" })
         .eq("id", projectId);
 
-      await stepOrchestrator.nextStep(projectId);
+      // Steps are now manually triggered - user must click "Next Step" button
     } catch (error: any) {
       console.error("Error in sourcingService.startSourcingWithStream:", error);
       throw error;
@@ -131,7 +131,7 @@ class SourcingService {
         .eq("project_id", projectId);
 
       if (!assets || assets.length === 0) {
-        await stepOrchestrator.nextStep(projectId);
+        // Steps are now manually triggered - user must click "Next Step" button
         return;
       }
 
@@ -190,7 +190,7 @@ class SourcingService {
         .update({ current_step: "sourced" })
         .eq("id", projectId);
 
-      await stepOrchestrator.nextStep(projectId);
+      // Steps are now manually triggered - user must click "Next Step" button
     } catch (error: any) {
       console.error("Error in sourcingService.startSourcing:", error);
       throw error;
