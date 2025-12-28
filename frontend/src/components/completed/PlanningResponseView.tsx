@@ -98,7 +98,7 @@ export function PlanningResponseView({ planningData }: PlanningResponseViewProps
                 )}
                 {planningData.executive_summary.industry_positioning && (
                   <div className="mb-4">
-                    <Text size="xsmall" className="text-ui-fg-muted uppercase tracking-wider">Industry 4.0/5.0 Positioning</Text>
+                    <Text size="xsmall" className="text-ui-fg-muted uppercase tracking-wider">Industry 5.0/5.0 Positioning</Text>
                     <Text size="small" className="text-ui-fg-subtle mt-1">
                       {planningData.executive_summary.industry_positioning}
                     </Text>
@@ -334,7 +334,7 @@ export function PlanningResponseView({ planningData }: PlanningResponseViewProps
         {/* Digital Transformation */}
         {planningData.digital_transformation && (
           <div>
-            <SectionHeader id="digital" title="Digital Twin & AI Integration" badge="Industry 4.0" />
+            <SectionHeader id="digital" title="Digital Twin & AI Integration" badge="Industry 5.0" />
             {expandedSections.has("digital") && (
               <div className="mt-3 p-4 bg-ui-bg-base rounded-lg border border-ui-border-base">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

@@ -449,7 +449,7 @@ class FullReportGenerator {
       sections.push({
         id: "digital",
         title: "Digital Transformation Strategy",
-        subtitle: "Industry 4.0 integration, IoT, and smart factory capabilities",
+        subtitle: "Industry 5.0 integration, IoT, and smart factory capabilities",
       });
     }
 
@@ -1931,7 +1931,7 @@ class FullReportGenerator {
 
     this.yPosition = this.pageHeight - this.margin;
 
-    this.drawSectionHeader("Industry 4.0 Capabilities");
+    this.drawSectionHeader("Industry 5.0 Capabilities");
     this.yPosition -= 30;
 
     const capabilities = [
@@ -2188,7 +2188,7 @@ This analysis examines the market dynamics, competitive landscape, and growth op
     const trends = [
       "Growing demand for automated and smart manufacturing solutions",
       "Increasing focus on sustainability and green manufacturing practices",
-      "Industry 4.0 adoption driving digital transformation investments",
+      "Industry 5.0 adoption driving digital transformation investments",
       "Supply chain resilience becoming a key competitive advantage",
       "Rising labor costs driving automation investments",
     ];

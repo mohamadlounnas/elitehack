@@ -63,7 +63,7 @@ INFORMATION TO GATHER (naturally through conversation):
    - Factory type and industrial category
    - Target products and production goals
    - Scale ambitions (small/medium/large/mega)
-   - Industry 4.0 / 5.0 positioning goals
+   - Industry 5.0 / 5.0 positioning goals
 
 2. **Location & Land Requirements**
    - Preferred geographic positioning (Algeria regions: North/South/Highlands)
@@ -115,7 +115,7 @@ GENERATE A COMPLETE INDUSTRIAL PROJECT DOSSIER with the following structure:
   "executive_summary": {
     "factory_identity": "string - Clear factory name/identity",
     "strategic_positioning": "string - Market position and competitive advantage",
-    "industry_positioning": "string - Industry 4.0/5.0 technology positioning",
+    "industry_positioning": "string - Industry 5.0/5.0 technology positioning",
     "economic_relevance": "string - Economic importance and impact",
     "key_highlights": ["string array - 3-5 key project highlights"]
   },
@@ -125,7 +125,7 @@ GENERATE A COMPLETE INDUSTRIAL PROJECT DOSSIER with the following structure:
     "industrial_category": "string - Primary industrial classification",
     "legal_nature": "string - Recommended legal structure (SARL, SPA, etc.)",
     "operating_scope": "national | export | regional",
-    "industry_ambition": "string - Industry 4.0/5.0 positioning statement",
+    "industry_ambition": "string - Industry 5.0/5.0 positioning statement",
     "certifications_required": ["string array - ISO, CE, Algerian standards"]
   },
   
@@ -485,7 +485,7 @@ This project demonstrates strong alignment with Algeria's industrial development
 **Legal Nature:** [LEGAL_NATURE]
 **Operating Scope:** [SCOPE]
 
-**Industry 4.0/5.0 Positioning:**
+**Industry 5.0/5.0 Positioning:**
 [INDUSTRY_POSITIONING]
 
 **Required Certifications:**

@@ -83,6 +83,18 @@ export function VideoGeneratorDrawer({
   onSave,
   onDelete,
 }: VideoGeneratorDrawerProps) {
+  // Helper to convert file path to full URL
+  const getImageUrl = (url: string | null): string | null => {
+    if (!url) return null;
+    // If it's already a data URL or full URL, return as is
+    if (url.startsWith("data:") || url.startsWith("http://") || url.startsWith("https://")) {
+      return url;
+    }
+    // If it's a relative path, prepend API base URL
+    const apiBase = import.meta.env.VITE_API_BASE_URL || "http://localhost:3001";
+    return `${apiBase}${url.startsWith("/") ? url : `/${url}`}`;
+  };
+
   const [title, setTitle] = useState(videoProject?.title || "Untitled Video");
   
   // Separate prompts for frames
@@ -397,7 +409,7 @@ export function VideoGeneratorDrawer({
                 ) : firstFrame ? (
                   <>
                     <img 
-                      src={firstFrame} 
+                      src={getImageUrl(firstFrame) || ""} 
                       alt="First Frame" 
                       className="w-full h-full object-contain"
                     />
@@ -467,7 +479,7 @@ export function VideoGeneratorDrawer({
                 ) : lastFrame ? (
                   <>
                     <img 
-                      src={lastFrame} 
+                      src={getImageUrl(lastFrame) || ""} 
                       alt="Last Frame" 
                       className="w-full h-full object-contain"
                     />
@@ -539,7 +551,7 @@ export function VideoGeneratorDrawer({
                         src={videoUrl} 
                         controls 
                         className="w-full"
-                        poster={firstFrame || undefined}
+                        poster={getImageUrl(firstFrame) || undefined}
                       />
                     </div>
                     <div className="w-full md:w-1/2 space-y-4">

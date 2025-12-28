@@ -133,7 +133,7 @@ class ElitePDFGenerator {
     await this.generateRiskAssessment(data);
     
     // Section 8: Digital Transformation
-    await this.generateSectionCover("08", "Digital Transformation", "Industry 4.0 integration and smart factory capabilities");
+    await this.generateSectionCover("08", "Digital Transformation", "Industry 5.0 integration and smart factory capabilities");
     await this.generateDigitalTransformation(data);
 
     // Add page numbers to all pages
@@ -525,7 +525,7 @@ class ElitePDFGenerator {
       { num: "05", title: "Supplier Network", desc: "Procurement sources and partnerships" },
       { num: "06", title: "Financial Analysis", desc: "TCO, ROI, and cash flow projections" },
       { num: "07", title: "Risk Assessment", desc: "Risk factors and mitigation strategies" },
-      { num: "08", title: "Digital Transformation", desc: "Industry 4.0 and smart factory capabilities" },
+      { num: "08", title: "Digital Transformation", desc: "Industry 5.0 and smart factory capabilities" },
     ];
 
     let y = this.pageHeight - 160;
@@ -1296,7 +1296,7 @@ class ElitePDFGenerator {
 
     this.yPosition = this.pageHeight - 80;
 
-    this.drawSectionTitle("Industry 4.0 Capabilities");
+    this.drawSectionTitle("Industry 5.0 Capabilities");
     this.yPosition -= 25;
 
     const capabilities = [

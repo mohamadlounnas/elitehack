@@ -510,7 +510,7 @@ class PlanningService {
       data.executive_summary = {
         factory_identity: data.industrial_identity?.factory_name || "Industrial Facility",
         strategic_positioning: "Strategic industrial manufacturing",
-        industry_positioning: "Industry 4.0 ready facility",
+        industry_positioning: "Industry 5.0 ready facility",
         economic_relevance: "Contributing to local economic development",
         key_highlights: [
           "Modern manufacturing facility",
@@ -527,7 +527,7 @@ class PlanningService {
         industrial_category: "General Manufacturing",
         legal_nature: "SARL",
         operating_scope: "national",
-        industry_ambition: "Industry 4.0 compliant manufacturing",
+        industry_ambition: "Industry 5.0 compliant manufacturing",
         certifications_required: ["ISO 9001", "CE Marking"]
       };
     }
@@ -652,7 +652,7 @@ class PlanningService {
       executive_summary: {
         factory_identity: "Industrial Manufacturing Facility",
         strategic_positioning: "Strategic manufacturing investment in Algeria",
-        industry_positioning: "Industry 4.0 ready facility",
+        industry_positioning: "Industry 5.0 ready facility",
         economic_relevance: "Contributing to Algerian industrial development",
         key_highlights: [
           "Modern manufacturing facility",
@@ -665,7 +665,7 @@ class PlanningService {
         industrial_category: "General Manufacturing",
         legal_nature: "SARL",
         operating_scope: "national",
-        industry_ambition: "Industry 4.0 compliant manufacturing",
+        industry_ambition: "Industry 5.0 compliant manufacturing",
         certifications_required: ["ISO 9001", "CE Marking", "Algerian Standards"]
       },
       factory_dimensions: {

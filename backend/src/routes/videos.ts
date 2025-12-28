@@ -262,7 +262,33 @@ Key Equipment: ${assets.map((a: any) => a.name).join(", ")}
       model: "models/gemini-2.5-flash-image",
     });
 
+    // Helper function to save base64 image to file system and return URL
+    const saveImageToFileSystem = async (projectId: string, frameType: string, dataUrl: string): Promise<string> => {
+      try {
+        const base64Data = dataUrl.split(",")[1];
+        if (!base64Data) {
+          throw new Error("Invalid data URL format");
+        }
+
+        const imageBuffer = Buffer.from(base64Data, "base64");
+        const filename = `${frameType}_frame_${Date.now()}.png`;
+        const projectDir = path.join(process.cwd(), "tmp", "projects", projectId);
+        
+        await fs.promises.mkdir(projectDir, { recursive: true });
+        
+        const filePath = path.join(projectDir, filename);
+        await fs.promises.writeFile(filePath, imageBuffer);
+        
+        // Return relative path that frontend can use to construct full URL
+        return `/tmp/projects/${projectId}/${filename}`;
+      } catch (error: any) {
+        logger.error("Error saving image to file system", error);
+        throw error;
+      }
+    };
+
     // Helper function to process image URLs (data URLs or file paths) to base64
+    // Note: Gemini only supports PNG and JPEG, not SVG
     const processImageToBase64 = (imageUrl: string | null | undefined): { base64Data: string | null; mimeType: string } | null => {
       if (!imageUrl) return null;
 
@@ -290,15 +316,29 @@ Key Equipment: ${assets.map((a: any) => a.name).join(", ")}
             const ext = path.extname(imageUrl).toLowerCase();
             if (ext === ".jpg" || ext === ".jpeg") mimeType = "image/jpeg";
             else if (ext === ".png") mimeType = "image/png";
-            else if (ext === ".svg") mimeType = "image/svg+xml";
+            else if (ext === ".svg") {
+              // SVG is not supported by Gemini, skip it
+              logger.info("Skipping SVG image (not supported by Gemini)", { path: imageUrl });
+              return null;
+            }
           } catch (fileError) {
             logger.warn("Failed to read image file", { path: imageUrl, error: fileError });
             return null;
           }
         }
 
-        if (base64Data) {
+        // Skip SVG images (Gemini doesn't support them)
+        if (mimeType === "image/svg+xml" || mimeType === "image/svg") {
+          logger.info("Skipping SVG image (not supported by Gemini)", { imageUrl: imageUrl.substring(0, 50) + "..." });
+          return null;
+        }
+
+        // Only return supported formats (PNG, JPEG)
+        if (base64Data && (mimeType === "image/png" || mimeType === "image/jpeg")) {
           return { base64Data, mimeType };
+        } else if (base64Data) {
+          logger.warn("Unsupported image format, skipping", { mimeType, imageUrl: imageUrl.substring(0, 50) + "..." });
+          return null;
         }
       } catch (error) {
         logger.warn("Failed to process image", { imageUrl, error });
@@ -427,16 +467,28 @@ Requirements:
         }
 
         if (imageUrl) {
-          if (frame === "first") {
-            results.first_frame_url = imageUrl;
-          } else {
-            results.last_frame_url = imageUrl;
-          }
+          // Save image to file system instead of storing base64 in database
+          try {
+            const filePath = await saveImageToFileSystem(projectId, frame, imageUrl);
+            
+            if (frame === "first") {
+              results.first_frame_url = filePath;
+            } else {
+              results.last_frame_url = filePath;
+            }
 
-          sendEvent("frame_complete", {
-            frame,
-            imageUrl,
-          });
+            // Send the file path (frontend will need to construct the full URL)
+            sendEvent("frame_complete", {
+              frame,
+              imageUrl: filePath, // Send file path instead of data URL
+            });
+          } catch (saveError: any) {
+            logger.error(`Error saving ${frame} frame to file system`, saveError);
+            sendEvent("frame_error", {
+              frame,
+              message: `Failed to save frame: ${saveError.message}`,
+            });
+          }
         } else {
           sendEvent("frame_error", {
             frame,

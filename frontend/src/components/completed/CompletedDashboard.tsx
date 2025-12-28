@@ -690,7 +690,7 @@ export function CompletedDashboard({
                 <div className="px-5 py-4 bg-ui-bg-subtle border-b border-ui-border-base">
                   <div className="flex items-center gap-x-2">
                     <ChartBar className="w-4 h-4 text-ui-fg-muted" />
-                    <Heading level="h2" className="text-sm">Industry 4.0 Integration</Heading>
+                    <Heading level="h2" className="text-sm">Industry 5.0 Integration</Heading>
                   </div>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 divide-y md:divide-y-0 md:divide-x divide-ui-border-base">
