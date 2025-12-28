@@ -256,12 +256,59 @@ Dimensions: ${project.planning_data.facility_specifications.dimensions?.length |
 ${assets && assets.length > 0 ? `
 Key Equipment: ${assets.map((a: any) => a.name).join(", ")}
 ` : ""}
-User Prompt: ${videoProject.prompt || "Create a professional factory promotional video"}
     `.trim();
 
     const model = genAI.getGenerativeModel({
       model: "models/gemini-2.5-flash-image",
     });
+
+    // Helper function to process image URLs (data URLs or file paths) to base64
+    const processImageToBase64 = (imageUrl: string | null | undefined): { base64Data: string | null; mimeType: string } | null => {
+      if (!imageUrl) return null;
+
+      try {
+        let base64Data: string | null = null;
+        let mimeType: string = "image/png";
+        
+        if (imageUrl.startsWith("data:")) {
+          // Parse data URL: data:image/png;base64,ABC123...
+          const commaIndex = imageUrl.indexOf(",");
+          if (commaIndex > 0) {
+            const header = imageUrl.substring(0, commaIndex);
+            base64Data = imageUrl.substring(commaIndex + 1);
+            const mimeMatch = header.match(/data:([^;]+)/);
+            if (mimeMatch) mimeType = mimeMatch[1];
+          } else {
+            return null;
+          }
+        } else {
+          // If it's a file path, try to read it
+          try {
+            const imageBuffer = fs.readFileSync(imageUrl);
+            base64Data = imageBuffer.toString("base64");
+            // Try to detect mime type from extension
+            const ext = path.extname(imageUrl).toLowerCase();
+            if (ext === ".jpg" || ext === ".jpeg") mimeType = "image/jpeg";
+            else if (ext === ".png") mimeType = "image/png";
+            else if (ext === ".svg") mimeType = "image/svg+xml";
+          } catch (fileError) {
+            logger.warn("Failed to read image file", { path: imageUrl, error: fileError });
+            return null;
+          }
+        }
+
+        if (base64Data) {
+          return { base64Data, mimeType };
+        }
+      } catch (error) {
+        logger.warn("Failed to process image", { imageUrl, error });
+      }
+      
+      return null;
+    };
+
+    // Process logo for context
+    const logoImage = processImageToBase64(project.logo_url);
 
     const framesToGenerate = frameType === "both" ? ["first", "last"] : [frameType];
     const results: { first_frame_url?: string; last_frame_url?: string } = {};
@@ -272,10 +319,34 @@ User Prompt: ${videoProject.prompt || "Create a professional factory promotional
         frame,
       });
 
-      const framePrompt = frame === "first"
-        ? `Create a cinematic opening shot for a factory promotional video.
+      // Get specific prompt from metadata, fall back to global prompt, then default
+      const specificPrompt = frame === "first" 
+        ? videoProject.metadata?.first_frame_prompt 
+        : videoProject.metadata?.last_frame_prompt;
+      
+      const userPrompt = specificPrompt || videoProject.prompt || (frame === "first" ? "Create a professional factory entrance view" : "Create a professional factory production floor view");
+
+      let framePrompt: string;
+      let imageParts: any[] = [];
+
+      // Add logo to context for both frames
+      if (logoImage) {
+        imageParts.push({
+          inlineData: {
+            mimeType: logoImage.mimeType,
+            data: logoImage.base64Data,
+          },
+        });
+      }
+
+      if (frame === "first") {
+        framePrompt = `Create a cinematic opening shot for a factory promotional video.
 
 ${factoryContext}
+
+User Description: ${userPrompt}
+
+${logoImage ? "BRAND CONTEXT: The company logo is attached - understand the brand identity, colors, and style. The video should reflect this brand aesthetic." : ""}
 
 Requirements:
 - Photorealistic, high-quality image
@@ -285,10 +356,47 @@ Requirements:
 - Should feel like the opening frame of a high-budget corporate video
 - Pure white or transparent background elements where applicable
 - 16:9 aspect ratio composition
-- DO NOT include any text, logos, or overlays`
-        : `Create a cinematic closing shot for a factory promotional video.
+- DO NOT include any text, logos, or overlays (the logo is for reference only, do not embed it in the image)`;
+      } else {
+        // For last frame, include layout plan and first frame as references
+        const layoutImageUrl = floorPlan?.file_path;
+        const firstFrameImageUrl = videoProject.first_frame_url;
+
+        // Process first frame image
+        const firstFrameImage = processImageToBase64(firstFrameImageUrl);
+        if (firstFrameImage) {
+          imageParts.push({
+            inlineData: {
+              mimeType: firstFrameImage.mimeType,
+              data: firstFrameImage.base64Data,
+            },
+          });
+        }
+
+        // Process layout plan image
+        const layoutImage = processImageToBase64(layoutImageUrl);
+        if (layoutImage) {
+          imageParts.push({
+            inlineData: {
+              mimeType: layoutImage.mimeType,
+              data: layoutImage.base64Data,
+            },
+          });
+        }
+
+        framePrompt = `Create a cinematic closing shot for a factory promotional video.
 
 ${factoryContext}
+
+User Description: ${userPrompt}
+
+IMPORTANT CONTEXT:
+- This is the CLOSING shot that should follow the opening shot (first frame)
+- The first frame image is attached - use it as a reference for style, lighting, and visual continuity
+${layoutImage ? "- The factory layout plan is attached - use it to understand the facility structure and ensure accuracy" : ""}
+${logoImage ? "- The company logo is attached - understand the brand identity, colors, and style. The video should reflect this brand aesthetic." : ""}
+- This closing shot should show the interior production floor in action
+- It should feel like a natural continuation from the opening shot
 
 Requirements:
 - Photorealistic, high-quality image  
@@ -297,11 +405,15 @@ Requirements:
 - Warm, inviting lighting suggesting productivity and success
 - Workers visible but not the main focus
 - Should feel like the final impressive shot before the company logo appears
+- Must be consistent with the style and setting of the first frame
 - 16:9 aspect ratio composition
-- DO NOT include any text, logos, or overlays`;
+- DO NOT include any text, logos, or overlays (the logo is for reference only, do not embed it in the image)`;
+      }
 
       try {
-        const response = await model.generateContent(framePrompt);
+        // Combine text prompt with image parts
+        const contentParts = [{ text: framePrompt }, ...imageParts];
+        const response = await model.generateContent(contentParts);
         const parts = response.response.candidates?.[0]?.content?.parts || [];
         
         let imageUrl: string | null = null;
