@@ -266,6 +266,12 @@ class CostAnalysisService {
 
       const prompt = `You are a financial analyst specializing in Total Cost of Ownership (TCO) analysis for industrial factory projects.
 
+CRITICAL CURRENCY REQUIREMENT:
+- ALL monetary values MUST be in USD (United States Dollars) ONLY
+- If you encounter any prices, costs, or financial data in other currencies (EUR, GBP, JPY, CNY, etc.), you MUST convert them to USD using current market exchange rates
+- ALL numbers in your JSON response must represent USD amounts
+- Do NOT use any currency symbols or codes in the JSON - just numeric values in USD
+
 PROJECT INFORMATION:
 Project Name: ${project.name}
 Project Description: ${project.description || "Not specified"}
@@ -283,21 +289,23 @@ EQUIPMENT/ASSETS (${assets.length} items):
 ${JSON.stringify(assetsInfo, null, 2)}
 
 TASK:
-Generate a comprehensive, detailed TCO analysis in JSON format. Calculate realistic costs based on:
-1. Equipment purchase prices (estimate based on equipment type, size, and specifications)
+Generate a comprehensive, detailed TCO analysis in JSON format. Calculate REALISTIC costs based on:
+1. Equipment purchase prices (estimate based on equipment type, size, and specifications - use USD market rates)
 2. Installation costs (typically 15-25% of equipment cost)
 3. Infrastructure costs (utilities, foundations, electrical, etc.)
 4. Training costs (operators, maintenance staff)
 5. Annual operating costs:
-   - Energy consumption (based on equipment power requirements)
+   - Energy consumption (based on equipment power requirements, use USD rates)
    - Maintenance (typically 3-5% of equipment cost annually)
-   - Labor (operators, maintenance, management)
+   - Labor (operators, maintenance, management - use USD wage rates)
    - Insurance (typically 1-2% of asset value)
-   - Consumables and materials
-   - Utilities (water, gas, etc.)
-6. Financial projections for 10 years
-7. Calculate NPV, IRR, ROI, and payback period
+   - Consumables and materials (use USD market prices)
+   - Utilities (water, gas, etc. - use USD rates)
+6. Financial projections for 10 years (all in USD)
+7. Calculate NPV, IRR, ROI, and payback period (use USD discount rates)
 8. Risk analysis with mitigation strategies
+
+IMPORTANT: Be realistic and use industry-standard USD pricing. If supplier information mentions other currencies, convert to USD.
 
 Return ONLY valid JSON in this exact format:
 {
@@ -362,7 +370,7 @@ Return ONLY valid JSON in this exact format:
 Be realistic and detailed. Use industry-standard percentages and calculations.`;
 
       const messages = [
-        new SystemMessage("You are a financial analyst expert in TCO analysis. Always respond with valid JSON only."),
+        new SystemMessage("You are a financial analyst expert in TCO analysis. Always respond with valid JSON only. ALL monetary values must be in USD (United States Dollars). Convert any other currencies to USD."),
         new HumanMessage(prompt),
       ];
 
@@ -446,7 +454,7 @@ Be realistic and detailed. Use industry-standard percentages and calculations.`;
 
       onUpdate({
         type: "calculating",
-        content: `TCO Analysis Complete:\n- Initial Investment: €${analysis.initial_investment.total.toLocaleString()}\n- Annual Operating: €${analysis.operating_costs.total_annual.toLocaleString()}\n- 5-Year Total: €${analysis.financial_metrics.total_cost_5_years.toLocaleString()}\n- ROI: ${analysis.financial_metrics.roi.toFixed(1)}%\n- Payback: ${analysis.financial_metrics.payback_period_years.toFixed(1)} years`,
+        content: `TCO Analysis Complete:\n- Initial Investment: $${analysis.initial_investment.total.toLocaleString()}\n- Annual Operating: $${analysis.operating_costs.total_annual.toLocaleString()}\n- 5-Year Total: $${analysis.financial_metrics.total_cost_5_years.toLocaleString()}\n- ROI: ${analysis.financial_metrics.roi.toFixed(1)}%\n- Payback: ${analysis.financial_metrics.payback_period_years.toFixed(1)} years`,
         progress: 75,
       });
 
@@ -686,11 +694,11 @@ Be realistic and detailed. Use industry-standard percentages and calculations.`;
     });
     yPosition -= 30;
 
-    drawText(`Initial Investment: €${analysis.initial_investment.total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, 12, true);
+    drawText(`Initial Investment: $${analysis.initial_investment.total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, 12, true);
     yPosition -= 5;
-    drawText(`Annual Operating Costs: €${analysis.operating_costs.total_annual.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, 12);
+    drawText(`Annual Operating Costs: $${analysis.operating_costs.total_annual.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, 12);
     yPosition -= 5;
-    drawText(`5-Year Total Cost: €${analysis.financial_metrics.total_cost_5_years.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, 12);
+    drawText(`5-Year Total Cost: $${analysis.financial_metrics.total_cost_5_years.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, 12);
     yPosition -= 5;
     drawText(`ROI: ${analysis.financial_metrics.roi.toFixed(1)}%`, 12, true);
     yPosition -= 5;
@@ -719,7 +727,7 @@ Be realistic and detailed. Use industry-standard percentages and calculations.`;
     for (const [label, amount] of investmentItems) {
       checkNewPage(lineHeight);
       const labelText = `${label}:`;
-      const amountText = `€${amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+      const amountText = `$${amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
       const labelWidth = font.widthOfTextAtSize(labelText, 12);
       
       page.drawText(labelText, {
@@ -757,7 +765,7 @@ Be realistic and detailed. Use industry-standard percentages and calculations.`;
       color: rgb(0, 0, 0),
     });
 
-    const totalText = `€${analysis.initial_investment.total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    const totalText = `$${analysis.initial_investment.total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
     page.drawText(totalText, {
       x: pageWidth - margin - boldFont.widthOfTextAtSize(totalText, 12),
       y: yPosition,
@@ -790,7 +798,7 @@ Be realistic and detailed. Use industry-standard percentages and calculations.`;
     for (const [label, amount] of operatingItems) {
       checkNewPage(lineHeight);
       const labelText = `${label}:`;
-      const amountText = `€${amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+      const amountText = `$${amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
       
       page.drawText(labelText, {
         x: margin + 20,
@@ -827,7 +835,7 @@ Be realistic and detailed. Use industry-standard percentages and calculations.`;
       color: rgb(0, 0, 0),
     });
 
-    const annualTotalText = `€${analysis.operating_costs.total_annual.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    const annualTotalText = `$${analysis.operating_costs.total_annual.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
     page.drawText(annualTotalText, {
       x: pageWidth - margin - boldFont.widthOfTextAtSize(annualTotalText, 12),
       y: yPosition,
@@ -855,13 +863,13 @@ Be realistic and detailed. Use industry-standard percentages and calculations.`;
         yPosition -= 5;
         drawText(`Supplier: ${assetCost.supplier}`, 10);
         yPosition -= 5;
-        drawText(`Purchase Price: €${assetCost.purchase_price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, 10);
+        drawText(`Purchase Price: $${assetCost.purchase_price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, 10);
         yPosition -= 5;
-        drawText(`Installation: €${assetCost.installation_cost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, 10);
+        drawText(`Installation: $${assetCost.installation_cost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, 10);
         yPosition -= 5;
-        drawText(`Annual Maintenance: €${assetCost.annual_maintenance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, 10);
+        drawText(`Annual Maintenance: $${assetCost.annual_maintenance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, 10);
         yPosition -= 5;
-        drawText(`Annual Energy: €${assetCost.annual_energy.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, 10);
+        drawText(`Annual Energy: $${assetCost.annual_energy.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, 10);
         yPosition -= 15;
       }
     }
@@ -891,7 +899,7 @@ Be realistic and detailed. Use industry-standard percentages and calculations.`;
       checkNewPage(lineHeight);
       const labelText = `${label}:`;
       const valueText = typeof value === "number" && !unit.includes("%")
-        ? `€${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}${unit}`
+        ? `$${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}${unit}`
         : `${value.toFixed(2)}${unit}`;
       
       page.drawText(labelText, {
@@ -957,10 +965,10 @@ Be realistic and detailed. Use industry-standard percentages and calculations.`;
       
       const rowData = [
         proj.year.toString(),
-        `€${proj.revenue.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`,
-        `€${proj.costs.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`,
-        `€${proj.net_cash_flow.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`,
-        `€${proj.cumulative_cash_flow.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`,
+        `$${proj.revenue.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`,
+        `$${proj.costs.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`,
+        `$${proj.net_cash_flow.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`,
+        `$${proj.cumulative_cash_flow.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`,
       ];
 
       for (let i = 0; i < rowData.length; i++) {
@@ -1027,8 +1035,8 @@ Be realistic and detailed. Use industry-standard percentages and calculations.`;
     yPosition -= 30;
 
     drawText(
-      `This comprehensive TCO analysis shows a total investment of €${analysis.initial_investment.total.toLocaleString()} ` +
-      `with annual operating costs of €${analysis.operating_costs.total_annual.toLocaleString()}. ` +
+      `This comprehensive TCO analysis shows a total investment of $${analysis.initial_investment.total.toLocaleString()} ` +
+      `with annual operating costs of $${analysis.operating_costs.total_annual.toLocaleString()}. ` +
       `The project demonstrates a ${analysis.financial_metrics.roi.toFixed(1)}% ROI with a payback period of ` +
       `${analysis.financial_metrics.payback_period_years.toFixed(1)} years. The financial projections indicate ` +
       `positive cash flow and sustainable growth over the 10-year period.`,
@@ -1077,12 +1085,12 @@ Be realistic and detailed. Use industry-standard percentages and calculations.`;
     ];
     
     summarySheet.addRow({ metric: "Project Name", value: project.name });
-    summarySheet.addRow({ metric: "Initial Investment", value: `€${analysis.initial_investment.total.toLocaleString()}` });
-    summarySheet.addRow({ metric: "Annual Operating Costs", value: `€${analysis.operating_costs.total_annual.toLocaleString()}` });
-    summarySheet.addRow({ metric: "5-Year Total Cost", value: `€${analysis.financial_metrics.total_cost_5_years.toLocaleString()}` });
+    summarySheet.addRow({ metric: "Initial Investment", value: `$${analysis.initial_investment.total.toLocaleString()}` });
+    summarySheet.addRow({ metric: "Annual Operating Costs", value: `$${analysis.operating_costs.total_annual.toLocaleString()}` });
+    summarySheet.addRow({ metric: "5-Year Total Cost", value: `$${analysis.financial_metrics.total_cost_5_years.toLocaleString()}` });
     summarySheet.addRow({ metric: "ROI", value: `${analysis.financial_metrics.roi.toFixed(1)}%` });
     summarySheet.addRow({ metric: "Payback Period", value: `${analysis.financial_metrics.payback_period_years.toFixed(1)} years` });
-    summarySheet.addRow({ metric: "NPV (5 years)", value: `€${analysis.financial_metrics.npv_5_years.toLocaleString()}` });
+    summarySheet.addRow({ metric: "NPV (5 years)", value: `$${analysis.financial_metrics.npv_5_years.toLocaleString()}` });
     summarySheet.addRow({ metric: "IRR", value: `${analysis.financial_metrics.irr.toFixed(2)}%` });
     
     // Format header row
@@ -1097,7 +1105,7 @@ Be realistic and detailed. Use industry-standard percentages and calculations.`;
     const investmentSheet = workbook.addWorksheet(this.sanitizeWorksheetName("Initial Investment"));
     investmentSheet.columns = [
       { header: "Category", key: "category", width: 30 },
-      { header: "Amount (€)", key: "amount", width: 20 },
+      { header: "Amount ($)", key: "amount", width: 20 },
     ];
     
     investmentSheet.addRow({ category: "Equipment Purchase", amount: analysis.initial_investment.equipment_purchase });
@@ -1116,13 +1124,13 @@ Be realistic and detailed. Use industry-standard percentages and calculations.`;
     investmentSheet.getRow(6).font = { bold: true };
     
     // Format amounts as currency
-    investmentSheet.getColumn(2).numFmt = '€#,##0.00';
+    investmentSheet.getColumn(2).numFmt = '$#,##0.00';
 
     // Sheet 3: Annual Operating Costs
     const operatingSheet = workbook.addWorksheet(this.sanitizeWorksheetName("Annual Operating Costs"));
     operatingSheet.columns = [
       { header: "Category", key: "category", width: 30 },
-      { header: "Annual Cost (€)", key: "amount", width: 20 },
+      { header: "Annual Cost ($)", key: "amount", width: 20 },
     ];
     
     operatingSheet.addRow({ category: "Energy", amount: analysis.operating_costs.energy });
@@ -1140,16 +1148,16 @@ Be realistic and detailed. Use industry-standard percentages and calculations.`;
       fgColor: { argb: "FFE0E0E0" },
     };
     operatingSheet.getRow(7).font = { bold: true };
-    operatingSheet.getColumn(2).numFmt = '€#,##0.00';
+    operatingSheet.getColumn(2).numFmt = '$#,##0.00';
 
     // Sheet 4: 5-Year ROI Projections
     const roiSheet = workbook.addWorksheet(this.sanitizeWorksheetName("5-Year ROI Projections"));
     roiSheet.columns = [
       { header: "Year", key: "year", width: 10 },
-      { header: "Revenue (€)", key: "revenue", width: 20 },
-      { header: "Costs (€)", key: "costs", width: 20 },
-      { header: "Net Cash Flow (€)", key: "netCashFlow", width: 20 },
-      { header: "Cumulative Cash Flow (€)", key: "cumulative", width: 25 },
+      { header: "Revenue ($)", key: "revenue", width: 20 },
+      { header: "Costs ($)", key: "costs", width: 20 },
+      { header: "Net Cash Flow ($)", key: "netCashFlow", width: 20 },
+      { header: "Cumulative Cash Flow ($)", key: "cumulative", width: 25 },
       { header: "ROI (%)", key: "roi", width: 15 },
     ];
     
@@ -1177,7 +1185,7 @@ Be realistic and detailed. Use industry-standard percentages and calculations.`;
     };
     // Format columns 2-5 as currency (Revenue, Costs, Net Cash Flow, Cumulative Cash Flow)
     for (let colNum = 2; colNum <= 5; colNum++) {
-      roiSheet.getColumn(colNum).numFmt = '€#,##0.00';
+      roiSheet.getColumn(colNum).numFmt = '$#,##0.00';
     }
 
     // Sheet 5: Asset-by-Asset Breakdown
@@ -1186,11 +1194,11 @@ Be realistic and detailed. Use industry-standard percentages and calculations.`;
       assetsSheet.columns = [
         { header: "Asset Name", key: "name", width: 35 },
         { header: "Supplier", key: "supplier", width: 25 },
-        { header: "Purchase Price (€)", key: "purchase", width: 20 },
-        { header: "Installation (€)", key: "installation", width: 20 },
-        { header: "Annual Maintenance (€)", key: "maintenance", width: 22 },
-        { header: "Annual Energy (€)", key: "energy", width: 20 },
-        { header: "Total First Year (€)", key: "total", width: 20 },
+        { header: "Purchase Price ($)", key: "purchase", width: 20 },
+        { header: "Installation ($)", key: "installation", width: 20 },
+        { header: "Annual Maintenance ($)", key: "maintenance", width: 22 },
+        { header: "Annual Energy ($)", key: "energy", width: 20 },
+        { header: "Total First Year ($)", key: "total", width: 20 },
       ];
       
       for (const asset of analysis.asset_costs) {
@@ -1214,7 +1222,7 @@ Be realistic and detailed. Use industry-standard percentages and calculations.`;
       };
       // Format columns 3-7 as currency (Purchase Price, Installation, Maintenance, Energy, Total First Year)
       for (let colNum = 3; colNum <= 7; colNum++) {
-        assetsSheet.getColumn(colNum).numFmt = '€#,##0.00';
+        assetsSheet.getColumn(colNum).numFmt = '$#,##0.00';
       }
     }
 

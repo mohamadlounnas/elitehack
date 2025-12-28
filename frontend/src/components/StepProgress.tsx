@@ -1,3 +1,4 @@
+import { useState, useEffect, useRef } from "react";
 import { Button, Text, StatusBadge, Container, Divider, clx } from "@medusajs/ui";
 import { CircleDottedLine, CircleHalfSolid, CheckCircleSolid, ChevronLeft, ChevronRight } from "@medusajs/icons";
 import type { ProjectStep } from "../types";
@@ -31,6 +32,11 @@ export function StepProgress({ currentStep, onRetry, onNextStep, onPrevStep }: S
   const currentStepIndex = steps.findIndex((s) => s.step === currentStep);
   const isActive = currentStepIndex >= 0 && steps[currentStepIndex].step === currentStep;
   const { formattedTime } = useStepTimer(isActive);
+  
+  // Countdown timer for completed step
+  const [countdown, setCountdown] = useState<number | null>(null);
+  const [isHovered, setIsHovered] = useState(false);
+  const countdownRef = useRef<NodeJS.Timeout | null>(null);
 
   const getStepStatus = (index: number): "not-started" | "in-progress" | "completed" => {
     if (index < currentStepIndex) return "completed";
@@ -40,6 +46,57 @@ export function StepProgress({ currentStep, onRetry, onNextStep, onPrevStep }: S
 
   const canGoNext = currentStepIndex < steps.length - 1;
   const canGoPrev = currentStepIndex > 0;
+  // Show countdown for any step that can go next (not the final "completed" step)
+  const shouldShowCountdown = canGoNext && onNextStep && currentStep !== "chat";
+
+  // Start countdown when a step is completed and can go next
+  useEffect(() => {
+    if (shouldShowCountdown && countdown === null) {
+      setCountdown(5);
+    } else if (!shouldShowCountdown) {
+      setCountdown(null);
+      setIsHovered(false);
+      if (countdownRef.current) {
+        clearInterval(countdownRef.current);
+        countdownRef.current = null;
+      }
+    }
+  }, [shouldShowCountdown, countdown]);
+
+  // Handle countdown timer
+  useEffect(() => {
+    // Clear any existing interval
+    if (countdownRef.current) {
+      clearInterval(countdownRef.current);
+      countdownRef.current = null;
+    }
+
+    // Only run countdown if conditions are met
+    if (countdown !== null && countdown > 0 && !isHovered && shouldShowCountdown && onNextStep) {
+      countdownRef.current = setInterval(() => {
+        setCountdown((prev) => {
+          if (prev === null || prev <= 1) {
+            // Auto-trigger next step when countdown reaches 0
+            if (prev === 1 && onNextStep) {
+              // Use setTimeout to ensure state updates are processed
+              setTimeout(() => {
+                onNextStep();
+              }, 100);
+            }
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    }
+
+    return () => {
+      if (countdownRef.current) {
+        clearInterval(countdownRef.current);
+        countdownRef.current = null;
+      }
+    };
+  }, [countdown, isHovered, shouldShowCountdown, onNextStep]);
 
   return (
     <Container className="divide-y p-0">
@@ -117,10 +174,21 @@ export function StepProgress({ currentStep, onRetry, onNextStep, onPrevStep }: S
                     onClick={onNextStep} 
                     variant="primary"
                     disabled={!canGoNext}
-                    className="flex-1"
+                    className="flex-1 relative"
+                    onMouseEnter={() => setIsHovered(true)}
+                    onMouseLeave={() => setIsHovered(false)}
                   >
-                    Next
-                    <ChevronRight className="w-4 h-4 ml-1" />
+                    {shouldShowCountdown && countdown !== null && countdown > 0 ? (
+                      <>
+                        Next <span className="font-mono">({countdown}s)</span>
+                        <ChevronRight className="w-4 h-4 ml-1" />
+                      </>
+                    ) : (
+                      <>
+                        Next
+                        <ChevronRight className="w-4 h-4 ml-1" />
+                      </>
+                    )}
                   </Button>
                 )}
               </div>

@@ -1,5 +1,9 @@
 import React from "react";
 import { Container, Heading, Text, Button, Badge } from "@medusajs/ui";
+import { 
+  LineChart, Line, BarChart, Bar, AreaChart, Area,
+  XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer 
+} from "recharts";
 import type { TCOCalculation, Project } from "../../types";
 
 interface FinancialReportsViewProps {
@@ -98,8 +102,51 @@ export function FinancialReportsView({ tco, project }: FinancialReportsViewProps
 
       {/* ROI Projections (5 Years) */}
       {breakdown?.projections && breakdown.projections.length > 0 && (
-        <div className="mt-6">
+        <div className="mt-6 space-y-4">
           <Heading level="h4" className="text-ui-fg-base font-semibold mb-4">5-Year ROI Projections</Heading>
+          
+          {/* ROI Chart */}
+          <Container className="p-4 border border-ui-border-base">
+            <Heading level="h5" className="text-ui-fg-base font-semibold mb-4 text-sm">Revenue vs Costs & ROI Trend</Heading>
+            <ResponsiveContainer width="100%" height={300}>
+              <LineChart data={breakdown.projections.slice(0, 5)}>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.1)" />
+                <XAxis dataKey="year" stroke="currentColor" />
+                <YAxis stroke="currentColor" tickFormatter={(value) => `$${(value / 1000).toFixed(0)}K`} />
+                <Tooltip 
+                  formatter={(value: number) => `$${value.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`}
+                  contentStyle={{ backgroundColor: 'rgba(255, 255, 255, 0.95)', border: '1px solid #e5e7eb', borderRadius: '4px' }}
+                />
+                <Legend />
+                <Line type="monotone" dataKey="revenue" stroke="#82ca9d" strokeWidth={2} name="Revenue" />
+                <Line type="monotone" dataKey="costs" stroke="#ff7300" strokeWidth={2} name="Costs" />
+                <Line type="monotone" dataKey="net_cash_flow" stroke="#8884d8" strokeWidth={2} name="Net Cash Flow" />
+              </LineChart>
+            </ResponsiveContainer>
+          </Container>
+
+          {/* ROI Bar Chart */}
+          <Container className="p-4 border border-ui-border-base">
+            <Heading level="h5" className="text-ui-fg-base font-semibold mb-4 text-sm">Cumulative ROI by Year</Heading>
+            <ResponsiveContainer width="100%" height={250}>
+              <BarChart data={breakdown.projections.slice(0, 5).map((proj: any) => ({
+                year: proj.year,
+                roi: breakdown?.initial_investment?.total
+                  ? ((proj.cumulative_cash_flow / breakdown.initial_investment.total) * 100)
+                  : 0
+              }))}>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.1)" />
+                <XAxis dataKey="year" stroke="currentColor" />
+                <YAxis stroke="currentColor" tickFormatter={(value) => `${value.toFixed(0)}%`} />
+                <Tooltip 
+                  formatter={(value: number) => `${value.toFixed(1)}%`}
+                  contentStyle={{ backgroundColor: 'rgba(255, 255, 255, 0.95)', border: '1px solid #e5e7eb', borderRadius: '4px' }}
+                />
+                <Bar dataKey="roi" fill="#8884d8" name="ROI %" />
+              </BarChart>
+            </ResponsiveContainer>
+          </Container>
+
           <div className="overflow-x-auto">
             <table className="w-full border-collapse">
               <thead>
@@ -122,16 +169,16 @@ export function FinancialReportsView({ tco, project }: FinancialReportsViewProps
                     <tr key={proj.year} className="hover:bg-ui-bg-subtle">
                       <td className="p-2 border border-ui-border-base">{proj.year}</td>
                       <td className="p-2 text-right border border-ui-border-base">
-                        €{proj.revenue.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                        ${proj.revenue.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                       </td>
                       <td className="p-2 text-right border border-ui-border-base">
-                        €{proj.costs.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                        ${proj.costs.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                       </td>
                       <td className="p-2 text-right border border-ui-border-base">
-                        €{proj.net_cash_flow.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                        ${proj.net_cash_flow.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                       </td>
                       <td className="p-2 text-right border border-ui-border-base">
-                        €{proj.cumulative_cash_flow.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                        ${proj.cumulative_cash_flow.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                       </td>
                       <td className="p-2 text-right border border-ui-border-base font-semibold">
                         {cumulativeROI}%

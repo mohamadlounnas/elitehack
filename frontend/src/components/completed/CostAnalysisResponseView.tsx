@@ -1,5 +1,9 @@
 import React from "react";
 import { Container, Heading, Text, Badge, Button } from "@medusajs/ui";
+import { 
+  LineChart, Line, BarChart, Bar, PieChart, Pie, Cell, AreaChart, Area,
+  XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer 
+} from "recharts";
 import type { TCOCalculation } from "../../types";
 
 interface CostAnalysisResponseViewProps {
@@ -81,7 +85,7 @@ export function CostAnalysisResponseView({ tco, projectId }: CostAnalysisRespons
 
   const formatCurrency = (value: number | undefined) => {
     if (value === undefined) return "N/A";
-    return `€${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    return `$${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   };
 
   const downloadPDF = () => {
@@ -106,63 +110,140 @@ export function CostAnalysisResponseView({ tco, projectId }: CostAnalysisRespons
         )}
       </div>
 
-      {/* Executive Summary */}
+      {/* Executive Summary with KPIs */}
       <div className="mb-6">
         <div
           className="flex items-center justify-between cursor-pointer p-3 bg-ui-bg-subtle rounded-lg hover:bg-ui-bg-base transition-colors"
           onClick={() => toggleSection("summary")}
         >
-          <Heading level="h4" className="text-ui-fg-base font-semibold">Executive Summary</Heading>
+          <Heading level="h4" className="text-ui-fg-base font-semibold">Executive Summary & KPIs</Heading>
           <Text size="small">{expandedSections.has("summary") ? "−" : "+"}</Text>
         </div>
         {expandedSections.has("summary") && (
-          <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="mt-4 space-y-6">
+            {/* KPI Cards Grid - Compact Design */}
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
             {breakdown?.initial_investment?.total !== undefined && (
-              <div className="p-4 bg-ui-bg-subtle rounded-lg border border-ui-border-base">
-                <Text size="small" className="text-ui-fg-subtle mb-1">Initial Investment</Text>
-                <Text weight="plus" size="large" className="text-ui-fg-base">
+              <div className="p-3 bg-ui-bg-subtle rounded-lg border border-ui-border-base">
+                <Text size="xsmall" className="text-ui-fg-subtle mb-1">Initial Investment</Text>
+                <Text weight="plus" size="base" className="text-ui-fg-base">
                   {formatCurrency(breakdown.initial_investment.total)}
                 </Text>
               </div>
             )}
             {breakdown?.operating_costs?.total_annual !== undefined && (
-              <div className="p-4 bg-ui-bg-subtle rounded-lg border border-ui-border-base">
-                <Text size="small" className="text-ui-fg-subtle mb-1">Annual Operating Costs</Text>
-                <Text weight="plus" size="large" className="text-ui-fg-base">
+              <div className="p-3 bg-ui-bg-subtle rounded-lg border border-ui-border-base">
+                <Text size="xsmall" className="text-ui-fg-subtle mb-1">Annual Operating</Text>
+                <Text weight="plus" size="base" className="text-ui-fg-base">
                   {formatCurrency(breakdown.operating_costs.total_annual)}
                 </Text>
               </div>
             )}
             {breakdown?.financial_metrics?.total_cost_5_years !== undefined && (
-              <div className="p-4 bg-ui-bg-subtle rounded-lg border border-ui-border-base">
-                <Text size="small" className="text-ui-fg-subtle mb-1">5-Year Total Cost</Text>
-                <Text weight="plus" size="large" className="text-ui-fg-base">
+              <div className="p-3 bg-ui-bg-subtle rounded-lg border border-ui-border-base">
+                <Text size="xsmall" className="text-ui-fg-subtle mb-1">5-Year Total</Text>
+                <Text weight="plus" size="base" className="text-ui-fg-base">
                   {formatCurrency(breakdown.financial_metrics.total_cost_5_years)}
                 </Text>
               </div>
             )}
             {tco.roi !== undefined && (
-              <div className="p-4 bg-ui-bg-subtle rounded-lg border border-ui-border-base">
-                <Text size="small" className="text-ui-fg-subtle mb-1">ROI</Text>
-                <Text weight="plus" size="large" className="text-ui-fg-base">
+              <div className="p-3 bg-ui-bg-subtle rounded-lg border border-ui-border-base">
+                <Text size="xsmall" className="text-ui-fg-subtle mb-1">ROI</Text>
+                <Text weight="plus" size="base" className="text-ui-fg-base">
                   {tco.roi.toFixed(1)}%
                 </Text>
               </div>
             )}
             {tco.payback_period !== undefined && (
-              <div className="p-4 bg-ui-bg-subtle rounded-lg border border-ui-border-base">
-                <Text size="small" className="text-ui-fg-subtle mb-1">Payback Period</Text>
-                <Text weight="plus" size="large" className="text-ui-fg-base">
-                  {tco.payback_period.toFixed(1)} {tco.payback_period === 1 ? "year" : "years"}
+              <div className="p-3 bg-ui-bg-subtle rounded-lg border border-ui-border-base">
+                <Text size="xsmall" className="text-ui-fg-subtle mb-1">Payback Period</Text>
+                <Text weight="plus" size="base" className="text-ui-fg-base">
+                  {tco.payback_period.toFixed(1)} {tco.payback_period === 1 ? "yr" : "yrs"}
                 </Text>
               </div>
             )}
             {breakdown?.financial_metrics?.npv_5_years !== undefined && (
-              <div className="p-4 bg-ui-bg-subtle rounded-lg border border-ui-border-base">
-                <Text size="small" className="text-ui-fg-subtle mb-1">NPV (5 years)</Text>
-                <Text weight="plus" size="large" className="text-ui-fg-base">
+              <div className="p-3 bg-ui-bg-subtle rounded-lg border border-ui-border-base">
+                <Text size="xsmall" className="text-ui-fg-subtle mb-1">NPV (5Y)</Text>
+                <Text weight="plus" size="base" className="text-ui-fg-base">
                   {formatCurrency(breakdown.financial_metrics.npv_5_years)}
                 </Text>
+              </div>
+            )}
+            {breakdown?.financial_metrics?.irr !== undefined && (
+              <div className="p-3 bg-ui-bg-subtle rounded-lg border border-ui-border-base">
+                <Text size="xsmall" className="text-ui-fg-subtle mb-1">IRR</Text>
+                <Text weight="plus" size="base" className="text-ui-fg-base">
+                  {breakdown.financial_metrics.irr.toFixed(1)}%
+                </Text>
+              </div>
+            )}
+            </div>
+
+            {/* Charts Row */}
+            {breakdown?.initial_investment && breakdown?.operating_costs && (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                {/* Initial Investment Pie Chart */}
+                <Container className="p-4 border border-ui-border-base">
+                  <Heading level="h5" className="text-ui-fg-base font-semibold mb-4 text-sm">Initial Investment Breakdown</Heading>
+                  <ResponsiveContainer width="100%" height={250}>
+                    <PieChart>
+                      <Pie
+                        data={[
+                          { name: "Equipment", value: breakdown.initial_investment.equipment_purchase || 0 },
+                          { name: "Installation", value: breakdown.initial_investment.installation || 0 },
+                          { name: "Infrastructure", value: breakdown.initial_investment.infrastructure || 0 },
+                          { name: "Training", value: breakdown.initial_investment.training || 0 },
+                          { name: "Consulting", value: breakdown.initial_investment.initial_consulting || 0 },
+                        ].filter(item => item.value > 0)}
+                        cx="50%"
+                        cy="50%"
+                        labelLine={false}
+                        label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+                        outerRadius={80}
+                        fill="#8884d8"
+                        dataKey="value"
+                      >
+                        {["#8884d8", "#82ca9d", "#ffc658", "#ff7300", "#0088fe"].map((color, index) => (
+                          <Cell key={`cell-${index}`} fill={color} />
+                        ))}
+                      </Pie>
+                      <Tooltip formatter={(value: number) => formatCurrency(value)} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </Container>
+
+                {/* Operating Costs Pie Chart */}
+                <Container className="p-4 border border-ui-border-base">
+                  <Heading level="h5" className="text-ui-fg-base font-semibold mb-4 text-sm">Annual Operating Costs</Heading>
+                  <ResponsiveContainer width="100%" height={250}>
+                    <PieChart>
+                      <Pie
+                        data={[
+                          { name: "Energy", value: breakdown.operating_costs.energy || 0 },
+                          { name: "Maintenance", value: breakdown.operating_costs.maintenance || 0 },
+                          { name: "Labor", value: breakdown.operating_costs.labor || 0 },
+                          { name: "Insurance", value: breakdown.operating_costs.insurance || 0 },
+                          { name: "Consumables", value: breakdown.operating_costs.consumables || 0 },
+                          { name: "Utilities", value: breakdown.operating_costs.utilities || 0 },
+                        ].filter(item => item.value > 0)}
+                        cx="50%"
+                        cy="50%"
+                        labelLine={false}
+                        label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+                        outerRadius={80}
+                        fill="#8884d8"
+                        dataKey="value"
+                      >
+                        {["#8884d8", "#82ca9d", "#ffc658", "#ff7300", "#0088fe", "#00C49F"].map((color, index) => (
+                          <Cell key={`cell-${index}`} fill={color} />
+                        ))}
+                      </Pie>
+                      <Tooltip formatter={(value: number) => formatCurrency(value)} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </Container>
               </div>
             )}
           </div>
@@ -418,8 +499,31 @@ export function CostAnalysisResponseView({ tco, projectId }: CostAnalysisRespons
             <Text size="small">{expandedSections.has("projections") ? "−" : "+"}</Text>
           </div>
           {expandedSections.has("projections") && (
-            <div className="mt-4 overflow-x-auto">
-              <table className="w-full border-collapse">
+            <div className="mt-4 space-y-4">
+              {/* Cash Flow Chart */}
+              <Container className="p-4 border border-ui-border-base">
+                <Heading level="h5" className="text-ui-fg-base font-semibold mb-4 text-sm">10-Year Cash Flow Projection</Heading>
+                <ResponsiveContainer width="100%" height={300}>
+                  <AreaChart data={breakdown.projections}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.1)" />
+                    <XAxis dataKey="year" stroke="currentColor" />
+                    <YAxis stroke="currentColor" tickFormatter={(value) => `$${(value / 1000).toFixed(0)}K`} />
+                    <Tooltip 
+                      formatter={(value: number) => formatCurrency(value)}
+                      contentStyle={{ backgroundColor: 'rgba(255, 255, 255, 0.95)', border: '1px solid #e5e7eb', borderRadius: '4px' }}
+                    />
+                    <Legend />
+                    <Area type="monotone" dataKey="revenue" stackId="1" stroke="#82ca9d" fill="#82ca9d" fillOpacity={0.6} name="Revenue" />
+                    <Area type="monotone" dataKey="costs" stackId="1" stroke="#ff7300" fill="#ff7300" fillOpacity={0.6} name="Costs" />
+                    <Line type="monotone" dataKey="net_cash_flow" stroke="#8884d8" strokeWidth={2} name="Net Cash Flow" />
+                    <Line type="monotone" dataKey="cumulative_cash_flow" stroke="#0088fe" strokeWidth={2} name="Cumulative Cash Flow" />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </Container>
+
+              {/* Data Table */}
+              <div className="overflow-x-auto">
+                <table className="w-full border-collapse">
                 <thead>
                   <tr className="bg-ui-bg-subtle">
                     <th className="p-2 text-left text-sm font-semibold border border-ui-border-base">Year</th>
@@ -441,6 +545,7 @@ export function CostAnalysisResponseView({ tco, projectId }: CostAnalysisRespons
                   ))}
                 </tbody>
               </table>
+              </div>
             </div>
           )}
         </div>

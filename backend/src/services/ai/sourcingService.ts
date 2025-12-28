@@ -197,32 +197,65 @@ class SourcingService {
     }
   }
 
+  /**
+   * Search for suppliers with strict compliance to Algeria's regulations
+   * PROHIBITED: Morocco, Israel, and countries with bad relations with Algeria
+   * PREFERRED: Algeria, African Union countries, countries with good diplomatic relations
+   */
   private async searchSuppliers(productName: string, productType?: string): Promise<any[]> {
     // Placeholder implementation using Google Custom Search API
     // In production, this would use actual Google Search API or scraping
-    const searchQuery = `${productName} ${productType || ""} supplier manufacturer`;
+    const searchQuery = `${productName} ${productType || ""} supplier manufacturer Algeria African`;
+
+    // PROHIBITED COUNTRIES - Must be filtered out
+    const prohibitedCountries = [
+      "Morocco", "Moroccan", "Maroc", "المغرب",
+      "Israel", "Israeli", "Palestine occupation",
+    ];
+
+    // PREFERRED COUNTRIES - Prioritize these
+    const preferredCountries = [
+      "Algeria", "Algerian", "Algérie",
+      "Tunisia", "Tunisian", "Tunisie",
+      "Egypt", "Egyptian", "مصر",
+      "South Africa", "South African",
+      "Nigeria", "Nigerian",
+      "Kenya", "Kenyan",
+      "Ghana", "Ghanaian",
+      "Senegal", "Senegalese",
+      "African Union", "AU member",
+    ];
 
     try {
-      // For now, return mock supplier data
-      // In production, implement actual Google Search API integration
-      return [
+      // For now, return mock supplier data that complies with Algeria's regulations
+      // In production, implement actual Google Search API integration with filtering
+      const suppliers = [
         {
-          name: `${productName} Supplier 1`,
-          website: "https://example.com/supplier1",
-          email: "contact@supplier1.com",
-          phone: "+1234567890",
-          location: "Global",
+          name: `${productName} Algerian Supplier`,
+          website: "https://example.com/algerian-supplier",
+          email: "contact@algerian-supplier.dz",
+          phone: "+213XXXXXXXXX",
+          location: "Algeria",
           products: [productName],
         },
         {
-          name: `${productName} Supplier 2`,
-          website: "https://example.com/supplier2",
-          email: "info@supplier2.com",
-          phone: "+0987654321",
-          location: "Europe",
+          name: `${productName} African Supplier`,
+          website: "https://example.com/african-supplier",
+          email: "info@african-supplier.com",
+          phone: "+XXX-XXXXXXX",
+          location: "Tunisia",
           products: [productName],
         },
       ];
+
+      // Filter out any suppliers from prohibited countries
+      return suppliers.filter(supplier => {
+        const locationLower = supplier.location.toLowerCase();
+        return !prohibitedCountries.some(prohibited => 
+          locationLower.includes(prohibited.toLowerCase()) ||
+          supplier.name.toLowerCase().includes(prohibited.toLowerCase())
+        );
+      });
     } catch (error) {
       console.error("Error in searchSuppliers:", error);
       return [];
