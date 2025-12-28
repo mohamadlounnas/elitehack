@@ -260,10 +260,7 @@ User Prompt: ${videoProject.prompt || "Create a professional factory promotional
     `.trim();
 
     const model = genAI.getGenerativeModel({
-      model: "gemini-2.0-flash-exp",
-      generationConfig: {
-        responseModalities: ["image", "text"],
-      } as any,
+      model: "models/gemini-2.5-flash-image",
     });
 
     const framesToGenerate = frameType === "both" ? ["first", "last"] : [frameType];

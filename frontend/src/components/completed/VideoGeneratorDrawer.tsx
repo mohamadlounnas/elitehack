@@ -18,7 +18,6 @@ import {
   ArrowDownTray,
   XMark,
   Plus,
-  Play,
   Trash,
 } from "@medusajs/icons";
 import type { VideoProject } from "../../types";
@@ -63,6 +62,14 @@ function RefreshIcon({ className }: { className?: string }) {
       <path d="M23 4v6h-6" />
       <path d="M1 20v-6h6" />
       <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+    </svg>
+  );
+}
+
+function PlayIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="currentColor">
+      <path d="M8 5v14l11-7z" />
     </svg>
   );
 }
@@ -509,7 +516,7 @@ export function VideoGeneratorDrawer({
               ) : (
                 <div className="py-4">
                   <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-gradient-to-br from-pink-500 to-rose-600 flex items-center justify-center">
-                    <Play className="w-8 h-8 text-white" />
+                    <PlayIcon className="w-8 h-8 text-white" />
                   </div>
                   <Text weight="plus" className="mb-1">
                     {canGenerateVideo ? "Ready to Generate Video" : "Generate Both Frames First"}
@@ -526,7 +533,7 @@ export function VideoGeneratorDrawer({
                     disabled={!canGenerateVideo}
                     className="gap-2"
                   >
-                    <Play className="w-4 h-4" />
+                    <PlayIcon className="w-4 h-4" />
                     Generate Video
                   </Button>
                 </div>

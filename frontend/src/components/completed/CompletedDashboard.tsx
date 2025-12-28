@@ -1942,6 +1942,19 @@ export function CompletedDashboard({
         planningData={planningData}
         projectId={project.id}
       />
+
+      {/* Video Generator Drawer */}
+      <VideoGeneratorDrawer
+        isOpen={isVideoDrawerOpen}
+        onClose={() => {
+          setIsVideoDrawerOpen(false);
+          setSelectedVideoProject(null);
+        }}
+        projectId={project.id}
+        videoProject={selectedVideoProject}
+        onSave={handleVideoSave}
+        onDelete={handleVideoDelete}
+      />
     </div>
   );
 }
