@@ -8,6 +8,7 @@ interface StepProgressProps {
   currentStep: ProjectStep;
   isStepProcessing?: boolean; // True when step is actively running (streaming)
   hasError?: boolean; // True when step encountered an error
+  hasUserInteraction?: boolean; // True when user has interacted (disables auto-next)
   onRetry?: () => void;
   onNextStep?: () => void;
   onPrevStep?: () => void;
@@ -26,7 +27,7 @@ const steps: { step: ProjectStep; label: string }[] = [
   { step: "completed", label: "Completed" },
 ];
 
-export function StepProgress({ currentStep, isStepProcessing = false, hasError = false, onRetry, onNextStep, onPrevStep }: StepProgressProps) {
+export function StepProgress({ currentStep, isStepProcessing = false, hasError = false, hasUserInteraction = false, onRetry, onNextStep, onPrevStep }: StepProgressProps) {
   const currentStepIndex = steps.findIndex((s) => s.step === currentStep);
   const isActive = currentStepIndex >= 0 && steps[currentStepIndex].step === currentStep;
   const { formattedTime } = useStepTimer(isStepProcessing);
@@ -48,20 +49,28 @@ export function StepProgress({ currentStep, isStepProcessing = false, hasError =
   const canGoNext = currentStepIndex < steps.length - 1;
   const canGoPrev = currentStepIndex > 0;
   
+  // Steps that are interactive (user needs to do something) - no auto-next
+  const interactiveSteps: ProjectStep[] = ["chat", "assetSelection"];
+  const isInteractiveStep = interactiveSteps.includes(currentStep);
+  
   // Only show countdown when:
   // - Step is NOT processing (streaming complete)
   // - No error occurred
   // - Not at final step
-  // - Not at chat step
+  // - Not at chat step or interactive step
   // - Has next step handler
-  const stepComplete = !isStepProcessing && !hasError && currentStep !== "chat" && currentStep !== "completed";
-  const shouldShowCountdown = canGoNext && onNextStep && stepComplete;
+  // - User has NOT interacted (if they did, they want manual control)
+  const stepComplete = !isStepProcessing && !hasError && currentStep !== "completed";
+  const shouldShowCountdown = canGoNext && onNextStep && stepComplete && !isInteractiveStep && !hasUserInteraction;
+
+  // Countdown duration based on step (longer for asset selection review)
+  const countdownDuration = 20; // 20 seconds for all auto-steps
 
   // Start countdown only when step processing completes
   useEffect(() => {
     if (shouldShowCountdown && countdown === null) {
       // Step just completed, start countdown
-      setCountdown(5);
+      setCountdown(countdownDuration);
     } else if (!shouldShowCountdown) {
       // Reset countdown when conditions change
       setCountdown(null);
@@ -71,7 +80,7 @@ export function StepProgress({ currentStep, isStepProcessing = false, hasError =
         countdownRef.current = null;
       }
     }
-  }, [shouldShowCountdown]);
+  }, [shouldShowCountdown, countdownDuration]);
 
   // Handle countdown timer
   useEffect(() => {
@@ -81,8 +90,8 @@ export function StepProgress({ currentStep, isStepProcessing = false, hasError =
       countdownRef.current = null;
     }
 
-    // Only run countdown if conditions are met
-    if (countdown !== null && countdown > 0 && !isHovered && shouldShowCountdown && onNextStep) {
+    // Only run countdown if conditions are met (also check hasUserInteraction)
+    if (countdown !== null && countdown > 0 && !isHovered && shouldShowCountdown && onNextStep && !hasUserInteraction) {
       countdownRef.current = setInterval(() => {
         setCountdown((prev) => {
           if (prev === null || prev <= 1) {
@@ -106,7 +115,7 @@ export function StepProgress({ currentStep, isStepProcessing = false, hasError =
         countdownRef.current = null;
       }
     };
-  }, [countdown, isHovered, shouldShowCountdown, onNextStep]);
+  }, [countdown, isHovered, shouldShowCountdown, onNextStep, hasUserInteraction]);
 
   return (
     <Container className="divide-y p-0">

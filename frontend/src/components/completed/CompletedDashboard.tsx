@@ -3,7 +3,7 @@
  * Inspired by Medusa.js dashboard patterns
  */
 
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useEffect } from "react";
 import { 
   Container, 
   Heading, 
@@ -35,10 +35,32 @@ import type {
   Supplier, 
   GeneratedFile, 
   TCOCalculation,
-  PlanningData 
+  PlanningData,
+  VideoProject,
 } from "../../types";
 import ReactMarkdown from "react-markdown";
 import { FullReportDrawer } from "./FullReportDrawer";
+import { AssetDetailDrawer } from "./AssetDetailDrawer";
+import { FloorPlanDrawer } from "./FloorPlanDrawer";
+import { VideoGeneratorDrawer } from "./VideoGeneratorDrawer";
+import { videoApi } from "../../services/api";
+import {
+  PieChart,
+  Pie,
+  Cell,
+  ResponsiveContainer,
+  LineChart,
+  Line,
+  AreaChart,
+  Area,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  BarChart,
+  Bar,
+} from "recharts";
 
 interface CompletedDashboardProps {
   project: Project;
@@ -262,6 +284,60 @@ export function CompletedDashboard({
   const [isGenerating, setIsGenerating] = useState(false);
   const [generationError, setGenerationError] = useState<string | null>(null);
   const [isReportDrawerOpen, setIsReportDrawerOpen] = useState(false);
+  const [selectedAsset, setSelectedAsset] = useState<Asset | null>(null);
+  const [isAssetDrawerOpen, setIsAssetDrawerOpen] = useState(false);
+  const [isFloorPlanDrawerOpen, setIsFloorPlanDrawerOpen] = useState(false);
+  const [selectedFloorPlan, setSelectedFloorPlan] = useState<GeneratedFile | null>(null);
+  
+  // Video projects state
+  const [videoProjects, setVideoProjects] = useState<VideoProject[]>([]);
+  const [isVideoDrawerOpen, setIsVideoDrawerOpen] = useState(false);
+  const [selectedVideoProject, setSelectedVideoProject] = useState<VideoProject | null>(null);
+  const [isLoadingVideos, setIsLoadingVideos] = useState(true);
+
+  // Fetch video projects on mount
+  useEffect(() => {
+    const fetchVideos = async () => {
+      try {
+        const videos = await videoApi.getVideos(project.id);
+        setVideoProjects(videos);
+      } catch (error) {
+        console.error("Failed to fetch video projects:", error);
+      } finally {
+        setIsLoadingVideos(false);
+      }
+    };
+    fetchVideos();
+  }, [project.id]);
+
+  const handleAddVideo = () => {
+    setSelectedVideoProject(null);
+    setIsVideoDrawerOpen(true);
+  };
+
+  const handleEditVideo = (video: VideoProject) => {
+    setSelectedVideoProject(video);
+    setIsVideoDrawerOpen(true);
+  };
+
+  const handleVideoSave = (savedVideo: VideoProject) => {
+    setVideoProjects(prev => {
+      const index = prev.findIndex(v => v.id === savedVideo.id);
+      if (index >= 0) {
+        // Update existing
+        const updated = [...prev];
+        updated[index] = savedVideo;
+        return updated;
+      } else {
+        // Add new
+        return [savedVideo, ...prev];
+      }
+    });
+  };
+
+  const handleVideoDelete = (videoId: string) => {
+    setVideoProjects(prev => prev.filter(v => v.id !== videoId));
+  };
   
   const layoutFiles = generatedFiles.filter(f => f.metadata?.type === "2d_layout");
   const analysis = tco?.breakdown;
@@ -427,6 +503,7 @@ export function CompletedDashboard({
           <Tabs.Trigger value="equipment">Equipment ({assets.length})</Tabs.Trigger>
           <Tabs.Trigger value="suppliers">Suppliers ({suppliers.length})</Tabs.Trigger>
           <Tabs.Trigger value="layouts">Layouts ({layoutFiles.length})</Tabs.Trigger>
+          <Tabs.Trigger value="videos">Videos ({videoProjects.length})</Tabs.Trigger>
           <Tabs.Trigger value="documents">Documents</Tabs.Trigger>
         </Tabs.List>
 
@@ -635,89 +712,394 @@ export function CompletedDashboard({
 
         {/* Financial Analysis Tab */}
         <Tabs.Content value="financial" className="mt-4">
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-            {/* CAPEX Breakdown */}
-            <Container className="p-0 overflow-hidden">
-              <div className="px-5 py-4 bg-ui-bg-subtle border-b border-ui-border-base">
-                <Heading level="h2" className="text-sm">Initial Investment (CAPEX)</Heading>
-              </div>
-              <div className="divide-y divide-ui-border-base">
-                {analysis?.initial_investment && Object.entries(analysis.initial_investment)
-                  .filter(([key]) => key !== 'total')
-                  .map(([key, value]) => (
-                    <div key={key} className="px-5 py-3 flex justify-between">
-                      <Text size="small" className="text-ui-fg-muted capitalize">
-                        {key.replace(/_/g, ' ')}
-                      </Text>
-                      <Text size="small">${(value as number).toLocaleString()}</Text>
+          <div className="space-y-6">
+            {/* Charts Row 1: CAPEX and OPEX Pie Charts */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              {/* CAPEX Breakdown Chart */}
+              {analysis?.initial_investment && (
+                <Container className="p-0 overflow-hidden">
+                  <div className="px-5 py-4 bg-ui-bg-subtle border-b border-ui-border-base">
+                    <div className="flex items-center justify-between">
+                      <Heading level="h2" className="text-sm">Initial Investment (CAPEX)</Heading>
+                      <Badge color="blue" size="small">${totalInvestment.toLocaleString()}</Badge>
                     </div>
-                  ))}
-                <div className="px-5 py-3 flex justify-between bg-ui-bg-subtle">
-                  <Text size="small" weight="plus">Total CAPEX</Text>
-                  <Text size="small" weight="plus">${totalInvestment.toLocaleString()}</Text>
-                </div>
-              </div>
-            </Container>
+                  </div>
+                  <div className="p-5">
+                    {(() => {
+                      const capexData = Object.entries(analysis.initial_investment)
+                        .filter(([key]) => key !== 'total' && (analysis.initial_investment[key as keyof typeof analysis.initial_investment] as number) > 0)
+                        .map(([key, value]) => ({
+                          name: key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
+                          value: value as number,
+                          formatted: `$${((value as number) / 1000).toFixed(0)}K`,
+                        }));
+                      
+                      const COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#06B6D4'];
+                      
+                      return (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-center">
+                          <div className="h-64">
+                            <ResponsiveContainer width="100%" height="100%">
+                              <PieChart>
+                                <Pie
+                                  data={capexData}
+                                  cx="50%"
+                                  cy="50%"
+                                  labelLine={false}
+                                  label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+                                  outerRadius={80}
+                                  fill="#8884d8"
+                                  dataKey="value"
+                                >
+                                  {capexData.map((entry, index) => (
+                                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                                  ))}
+                                </Pie>
+                                <Tooltip 
+                                  formatter={(value: number) => `$${value.toLocaleString()}`}
+                                />
+                              </PieChart>
+                            </ResponsiveContainer>
+                          </div>
+                          <div className="space-y-2">
+                            {capexData.map((item, idx) => (
+                              <div key={item.name} className="flex items-center justify-between p-2 rounded bg-ui-bg-subtle">
+                                <div className="flex items-center gap-2">
+                                  <div 
+                                    className="w-3 h-3 rounded-full" 
+                                    style={{ backgroundColor: COLORS[idx % COLORS.length] }}
+                                  />
+                                  <Text size="small" className="text-ui-fg-muted capitalize">
+                                    {item.name}
+                                  </Text>
+                                </div>
+                                <Text size="small" weight="plus">
+                                  ${item.value.toLocaleString()}
+                                </Text>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })()}
+                  </div>
+                </Container>
+              )}
 
-            {/* OPEX Breakdown */}
-            <Container className="p-0 overflow-hidden">
-              <div className="px-5 py-4 bg-ui-bg-subtle border-b border-ui-border-base">
-                <Heading level="h2" className="text-sm">Operating Costs (OPEX/Year)</Heading>
-              </div>
-              <div className="divide-y divide-ui-border-base">
-                {analysis?.operating_costs && Object.entries(analysis.operating_costs)
-                  .filter(([key]) => key !== 'total_annual')
-                  .map(([key, value]) => (
-                    <div key={key} className="px-5 py-3 flex justify-between">
-                      <Text size="small" className="text-ui-fg-muted capitalize">
-                        {key.replace(/_/g, ' ')}
-                      </Text>
-                      <Text size="small">${(value as number).toLocaleString()}</Text>
+              {/* OPEX Breakdown Chart */}
+              {analysis?.operating_costs && (
+                <Container className="p-0 overflow-hidden">
+                  <div className="px-5 py-4 bg-ui-bg-subtle border-b border-ui-border-base">
+                    <div className="flex items-center justify-between">
+                      <Heading level="h2" className="text-sm">Operating Costs (OPEX/Year)</Heading>
+                      <Badge color="green" size="small">${annualOpex.toLocaleString()}</Badge>
                     </div>
-                  ))}
-                <div className="px-5 py-3 flex justify-between bg-ui-bg-subtle">
-                  <Text size="small" weight="plus">Total Annual OPEX</Text>
-                  <Text size="small" weight="plus">${annualOpex.toLocaleString()}</Text>
-                </div>
-              </div>
-            </Container>
+                  </div>
+                  <div className="p-5">
+                    {(() => {
+                      const opexData = Object.entries(analysis.operating_costs)
+                        .filter(([key]) => key !== 'total_annual' && (analysis.operating_costs[key as keyof typeof analysis.operating_costs] as number) > 0)
+                        .map(([key, value]) => ({
+                          name: key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
+                          value: value as number,
+                          formatted: `$${((value as number) / 1000).toFixed(0)}K`,
+                        }));
+                      
+                      const COLORS = ['#10B981', '#3B82F6', '#F59E0B', '#EF4444', '#8B5CF6', '#06B6D4'];
+                      
+                      return (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-center">
+                          <div className="h-64">
+                            <ResponsiveContainer width="100%" height="100%">
+                              <PieChart>
+                                <Pie
+                                  data={opexData}
+                                  cx="50%"
+                                  cy="50%"
+                                  labelLine={false}
+                                  label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+                                  outerRadius={80}
+                                  fill="#8884d8"
+                                  dataKey="value"
+                                >
+                                  {opexData.map((entry, index) => (
+                                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                                  ))}
+                                </Pie>
+                                <Tooltip 
+                                  formatter={(value: number) => `$${value.toLocaleString()}`}
+                                />
+                              </PieChart>
+                            </ResponsiveContainer>
+                          </div>
+                          <div className="space-y-2">
+                            {opexData.map((item, idx) => (
+                              <div key={item.name} className="flex items-center justify-between p-2 rounded bg-ui-bg-subtle">
+                                <div className="flex items-center gap-2">
+                                  <div 
+                                    className="w-3 h-3 rounded-full" 
+                                    style={{ backgroundColor: COLORS[idx % COLORS.length] }}
+                                  />
+                                  <Text size="small" className="text-ui-fg-muted capitalize">
+                                    {item.name}
+                                  </Text>
+                                </div>
+                                <Text size="small" weight="plus">
+                                  ${item.value.toLocaleString()}
+                                </Text>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })()}
+                  </div>
+                </Container>
+              )}
+            </div>
 
-            {/* Financial Metrics */}
-            <Container className="p-0 overflow-hidden">
-              <div className="px-5 py-4 bg-ui-bg-subtle border-b border-ui-border-base">
-                <Heading level="h2" className="text-sm">Financial Metrics</Heading>
-              </div>
-              <div className="divide-y divide-ui-border-base">
-                <div className="px-5 py-3 flex justify-between">
-                  <Text size="small" className="text-ui-fg-muted">5-Year TCO</Text>
-                  <Text size="small">${(analysis?.financial_metrics?.total_cost_5_years || 0).toLocaleString()}</Text>
-                </div>
-                <div className="px-5 py-3 flex justify-between">
-                  <Text size="small" className="text-ui-fg-muted">10-Year TCO</Text>
-                  <Text size="small">${(analysis?.financial_metrics?.total_cost_10_years || 0).toLocaleString()}</Text>
-                </div>
-                <div className="px-5 py-3 flex justify-between">
-                  <Text size="small" className="text-ui-fg-muted">NPV (10%)</Text>
-                  <Text size="small" className={npv >= 0 ? "text-ui-tag-green-text" : "text-ui-tag-red-text"}>
-                    ${npv.toLocaleString()}
-                  </Text>
-                </div>
-                <div className="px-5 py-3 flex justify-between">
-                  <Text size="small" className="text-ui-fg-muted">IRR</Text>
-                  <Text size="small">{irr.toFixed(1)}%</Text>
-                </div>
-                <div className="px-5 py-3 flex justify-between bg-ui-bg-subtle">
-                  <Text size="small" weight="plus">Payback Period</Text>
-                  <Text size="small" weight="plus">{paybackYears.toFixed(1)} years</Text>
-                </div>
-              </div>
-            </Container>
-
-            {/* Cash Flow Projections */}
+            {/* Cash Flow Projections Chart */}
             {analysis?.projections?.length && (
-              <Container className="p-0 overflow-hidden lg:col-span-3">
+              <Container className="p-0 overflow-hidden">
                 <div className="px-5 py-4 bg-ui-bg-subtle border-b border-ui-border-base">
                   <Heading level="h2" className="text-sm">10-Year Cash Flow Projections</Heading>
+                </div>
+                <div className="p-5">
+                  <div className="h-80">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart data={analysis.projections}>
+                        <defs>
+                          <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#10B981" stopOpacity={0.8}/>
+                            <stop offset="95%" stopColor="#10B981" stopOpacity={0}/>
+                          </linearGradient>
+                          <linearGradient id="colorNetFlow" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#3B82F6" stopOpacity={0.8}/>
+                            <stop offset="95%" stopColor="#3B82F6" stopOpacity={0}/>
+                          </linearGradient>
+                          <linearGradient id="colorCumulative" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#8B5CF6" stopOpacity={0.8}/>
+                            <stop offset="95%" stopColor="#8B5CF6" stopOpacity={0}/>
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
+                        <XAxis 
+                          dataKey="year" 
+                          stroke="#6B7280"
+                          style={{ fontSize: '12px' }}
+                        />
+                        <YAxis 
+                          stroke="#6B7280"
+                          style={{ fontSize: '12px' }}
+                          tickFormatter={(value) => `$${(value / 1000).toFixed(0)}K`}
+                        />
+                        <Tooltip 
+                          formatter={(value: number) => `$${value.toLocaleString()}`}
+                          contentStyle={{ 
+                            backgroundColor: 'rgba(255, 255, 255, 0.95)',
+                            border: '1px solid #E5E7EB',
+                            borderRadius: '6px'
+                          }}
+                        />
+                        <Legend />
+                        <Area 
+                          type="monotone" 
+                          dataKey="revenue" 
+                          stackId="1"
+                          stroke="#10B981" 
+                          fillOpacity={1} 
+                          fill="url(#colorRevenue)"
+                          name="Revenue"
+                        />
+                        <Area 
+                          type="monotone" 
+                          dataKey="net_cash_flow" 
+                          stackId="2"
+                          stroke="#3B82F6" 
+                          fillOpacity={1} 
+                          fill="url(#colorNetFlow)"
+                          name="Net Cash Flow"
+                        />
+                        <Line 
+                          type="monotone" 
+                          dataKey="cumulative_cash_flow" 
+                          stroke="#8B5CF6" 
+                          strokeWidth={3}
+                          dot={{ fill: '#8B5CF6', r: 4 }}
+                          name="Cumulative Cash Flow"
+                        />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+              </Container>
+            )}
+
+            {/* Financial Metrics Bar Chart */}
+            {analysis?.financial_metrics && (
+              <Container className="p-0 overflow-hidden">
+                <div className="px-5 py-4 bg-ui-bg-subtle border-b border-ui-border-base">
+                  <Heading level="h2" className="text-sm">Key Financial Metrics</Heading>
+                </div>
+                <div className="p-5">
+                  <div className="h-64">
+                    <ResponsiveContainer width="100%" height="100%">
+                      {(() => {
+                        const metricsData = [
+                          {
+                            name: 'ROI',
+                            value: roi,
+                            formatted: `${roi.toFixed(1)}%`,
+                            color: '#10B981'
+                          },
+                          {
+                            name: 'IRR',
+                            value: irr,
+                            formatted: `${irr.toFixed(1)}%`,
+                            color: '#3B82F6'
+                          },
+                          {
+                            name: 'Payback (Years)',
+                            value: paybackYears,
+                            formatted: `${paybackYears.toFixed(1)} yrs`,
+                            color: '#F59E0B'
+                          },
+                          {
+                            name: 'NPV (5yr)',
+                            value: npv / 1000,
+                            formatted: `$${(npv / 1000).toFixed(0)}K`,
+                            color: npv >= 0 ? '#10B981' : '#EF4444'
+                          }
+                        ];
+                        
+                        return (
+                          <BarChart 
+                            data={metricsData}
+                            layout="vertical"
+                          >
+                            <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
+                            <XAxis 
+                              type="number"
+                              stroke="#6B7280"
+                              style={{ fontSize: '12px' }}
+                            />
+                            <YAxis 
+                              dataKey="name" 
+                              type="category"
+                              stroke="#6B7280"
+                              style={{ fontSize: '12px' }}
+                              width={120}
+                            />
+                            <Tooltip 
+                              formatter={(value: number, name: string, props: any) => [props.payload.formatted, props.payload.name]}
+                              contentStyle={{ 
+                                backgroundColor: 'rgba(255, 255, 255, 0.95)',
+                                border: '1px solid #E5E7EB',
+                                borderRadius: '6px'
+                              }}
+                            />
+                            <Bar 
+                              dataKey="value" 
+                              radius={[0, 4, 4, 0]}
+                            >
+                              {metricsData.map((entry, index) => (
+                                <Cell key={`cell-${index}`} fill={entry.color} />
+                              ))}
+                            </Bar>
+                          </BarChart>
+                        );
+                      })()}
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+              </Container>
+            )}
+
+            {/* Detailed Tables Section */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+              {/* CAPEX Breakdown Table */}
+              <Container className="p-0 overflow-hidden">
+                <div className="px-5 py-4 bg-ui-bg-subtle border-b border-ui-border-base">
+                  <Heading level="h2" className="text-sm">CAPEX Details</Heading>
+                </div>
+                <div className="divide-y divide-ui-border-base">
+                  {analysis?.initial_investment && Object.entries(analysis.initial_investment)
+                    .filter(([key]) => key !== 'total')
+                    .map(([key, value]) => (
+                      <div key={key} className="px-5 py-3 flex justify-between">
+                        <Text size="small" className="text-ui-fg-muted capitalize">
+                          {key.replace(/_/g, ' ')}
+                        </Text>
+                        <Text size="small">${(value as number).toLocaleString()}</Text>
+                      </div>
+                    ))}
+                  <div className="px-5 py-3 flex justify-between bg-ui-bg-subtle">
+                    <Text size="small" weight="plus">Total CAPEX</Text>
+                    <Text size="small" weight="plus">${totalInvestment.toLocaleString()}</Text>
+                  </div>
+                </div>
+              </Container>
+
+              {/* OPEX Breakdown Table */}
+              <Container className="p-0 overflow-hidden">
+                <div className="px-5 py-4 bg-ui-bg-subtle border-b border-ui-border-base">
+                  <Heading level="h2" className="text-sm">OPEX Details</Heading>
+                </div>
+                <div className="divide-y divide-ui-border-base">
+                  {analysis?.operating_costs && Object.entries(analysis.operating_costs)
+                    .filter(([key]) => key !== 'total_annual')
+                    .map(([key, value]) => (
+                      <div key={key} className="px-5 py-3 flex justify-between">
+                        <Text size="small" className="text-ui-fg-muted capitalize">
+                          {key.replace(/_/g, ' ')}
+                        </Text>
+                        <Text size="small">${(value as number).toLocaleString()}</Text>
+                      </div>
+                    ))}
+                  <div className="px-5 py-3 flex justify-between bg-ui-bg-subtle">
+                    <Text size="small" weight="plus">Total Annual OPEX</Text>
+                    <Text size="small" weight="plus">${annualOpex.toLocaleString()}</Text>
+                  </div>
+                </div>
+              </Container>
+
+              {/* Financial Metrics Table */}
+              <Container className="p-0 overflow-hidden">
+                <div className="px-5 py-4 bg-ui-bg-subtle border-b border-ui-border-base">
+                  <Heading level="h2" className="text-sm">Financial Metrics</Heading>
+                </div>
+                <div className="divide-y divide-ui-border-base">
+                  <div className="px-5 py-3 flex justify-between">
+                    <Text size="small" className="text-ui-fg-muted">5-Year TCO</Text>
+                    <Text size="small">${(analysis?.financial_metrics?.total_cost_5_years || 0).toLocaleString()}</Text>
+                  </div>
+                  <div className="px-5 py-3 flex justify-between">
+                    <Text size="small" className="text-ui-fg-muted">10-Year TCO</Text>
+                    <Text size="small">${(analysis?.financial_metrics?.total_cost_10_years || 0).toLocaleString()}</Text>
+                  </div>
+                  <div className="px-5 py-3 flex justify-between">
+                    <Text size="small" className="text-ui-fg-muted">NPV (10%)</Text>
+                    <Text size="small" className={npv >= 0 ? "text-ui-tag-green-text" : "text-ui-tag-red-text"}>
+                      ${npv.toLocaleString()}
+                    </Text>
+                  </div>
+                  <div className="px-5 py-3 flex justify-between">
+                    <Text size="small" className="text-ui-fg-muted">IRR</Text>
+                    <Text size="small">{irr.toFixed(1)}%</Text>
+                  </div>
+                  <div className="px-5 py-3 flex justify-between bg-ui-bg-subtle">
+                    <Text size="small" weight="plus">Payback Period</Text>
+                    <Text size="small" weight="plus">{paybackYears.toFixed(1)} years</Text>
+                  </div>
+                </div>
+              </Container>
+            </div>
+
+            {/* Cash Flow Projections Table */}
+            {analysis?.projections?.length && (
+              <Container className="p-0 overflow-hidden">
+                <div className="px-5 py-4 bg-ui-bg-subtle border-b border-ui-border-base">
+                  <Heading level="h2" className="text-sm">Detailed Cash Flow Projections</Heading>
                 </div>
                 <div className="overflow-x-auto">
                   <Table>
@@ -770,43 +1152,85 @@ export function CompletedDashboard({
                     <Table.HeaderCell>Description</Table.HeaderCell>
                     <Table.HeaderCell className="text-right">Est. Cost</Table.HeaderCell>
                     <Table.HeaderCell>Image</Table.HeaderCell>
+                    <Table.HeaderCell>Suppliers</Table.HeaderCell>
                   </Table.Row>
                 </Table.Header>
                 <Table.Body>
-                  {assets.map((asset) => (
-                    <Table.Row key={asset.id}>
-                      <Table.Cell className="font-medium">{asset.name}</Table.Cell>
-                      <Table.Cell>
-                        <Badge color="grey" size="small">{asset.type || "Equipment"}</Badge>
-                      </Table.Cell>
-                      <Table.Cell className="max-w-xs truncate text-ui-fg-subtle">
-                        {asset.description || "-"}
-                      </Table.Cell>
-                      <Table.Cell className="text-right">
-                        {asset.specifications?.estimated_cost_usd 
-                          ? `$${asset.specifications.estimated_cost_usd.toLocaleString()}`
-                          : "-"}
-                      </Table.Cell>
-                      <Table.Cell>
-                        {asset.image_url ? (
-                          <a href={asset.image_url} target="_blank" rel="noopener noreferrer">
-                            <img 
-                              src={asset.image_url} 
-                              alt={asset.name}
-                              className="w-10 h-10 object-cover rounded"
-                            />
-                          </a>
-                        ) : (
-                          <div className="w-10 h-10 bg-ui-bg-subtle rounded flex items-center justify-center">
-                            <Photo className="w-4 h-4 text-ui-fg-muted" />
+                  {assets.map((asset) => {
+                    // Count suppliers for this asset
+                    const assetSupplierCount = suppliers.filter(s => 
+                      s.asset_suppliers?.some(as => as.asset_id === asset.id) ||
+                      s.products?.some(p => 
+                        asset.name.toLowerCase().includes(p.toLowerCase())
+                      )
+                    ).length;
+                    
+                    return (
+                      <Table.Row 
+                        key={asset.id}
+                        className="cursor-pointer hover:bg-ui-bg-subtle-hover transition-colors"
+                        onClick={() => {
+                          setSelectedAsset(asset);
+                          setIsAssetDrawerOpen(true);
+                        }}
+                      >
+                        <Table.Cell className="font-medium">
+                          <div className="flex items-center gap-x-2">
+                            {asset.name}
+                            <Badge color="blue" size="2xsmall" className="opacity-0 group-hover:opacity-100 transition-opacity">
+                              View Details
+                            </Badge>
                           </div>
-                        )}
-                      </Table.Cell>
-                    </Table.Row>
-                  ))}
+                        </Table.Cell>
+                        <Table.Cell>
+                          <Badge color="grey" size="small">{asset.type || "Equipment"}</Badge>
+                        </Table.Cell>
+                        <Table.Cell className="max-w-xs truncate text-ui-fg-subtle">
+                          {asset.description || "-"}
+                        </Table.Cell>
+                        <Table.Cell className="text-right">
+                          {asset.specifications?.estimated_cost_usd 
+                            ? `$${asset.specifications.estimated_cost_usd.toLocaleString()}`
+                            : "-"}
+                        </Table.Cell>
+                        <Table.Cell onClick={(e) => e.stopPropagation()}>
+                          {asset.image_url ? (
+                            <a href={asset.image_url} target="_blank" rel="noopener noreferrer">
+                              <img 
+                                src={asset.image_url} 
+                                alt={asset.name}
+                                className="w-10 h-10 object-cover rounded hover:ring-2 hover:ring-ui-border-interactive"
+                              />
+                            </a>
+                          ) : (
+                            <div className="w-10 h-10 bg-ui-bg-subtle rounded flex items-center justify-center">
+                              <Photo className="w-4 h-4 text-ui-fg-muted" />
+                            </div>
+                          )}
+                        </Table.Cell>
+                        <Table.Cell>
+                          <Badge 
+                            color={assetSupplierCount > 0 ? "green" : "grey"} 
+                            size="small"
+                          >
+                            {assetSupplierCount > 0 ? `${assetSupplierCount} suppliers` : "None"}
+                          </Badge>
+                        </Table.Cell>
+                      </Table.Row>
+                    );
+                  })}
                 </Table.Body>
               </Table>
             </div>
+            
+            {/* Click hint */}
+            {assets.length > 0 && (
+              <div className="px-4 py-2 bg-ui-bg-subtle border-t border-ui-border-base">
+                <Text size="xsmall" className="text-ui-fg-muted">
+                  💡 Click on any equipment row to view details and supplier comparison
+                </Text>
+              </div>
+            )}
           </Container>
         </Tabs.Content>
 
@@ -879,36 +1303,75 @@ export function CompletedDashboard({
             {layoutFiles.map((file) => {
               // file_path contains the data URL (data:image/png;base64,...)
               const imageUrl = file.file_path || file.storage_url || "";
-              const layoutTypeName = file.metadata?.layout_type || file.metadata?.layoutType || "Layout";
+              const layoutTypeName = (file.metadata?.layout_type || file.metadata?.layoutType || "Layout").toString().toLowerCase();
+              const filename = (file.filename || "").toLowerCase();
+              
+              // Check if this is a floor plan (by type or filename)
+              const isFloorPlan = layoutTypeName.includes("floor") || 
+                                  filename.includes("floor_plan") ||
+                                  filename.includes("floorplan");
+              
+              // Debug: Log layout type detection
+              console.log("[Layout Debug]", { filename: file.filename, layoutTypeName, isFloorPlan, metadata: file.metadata });
               
               return (
-                <Container key={file.id} className="p-0 overflow-hidden group">
-                  <a 
-                    href={imageUrl} 
-                    target="_blank" 
-                    rel="noopener noreferrer"
-                    className="block"
-                  >
-                    <div className="aspect-video bg-ui-bg-subtle relative overflow-hidden">
-                      {imageUrl ? (
-                        <img 
-                          src={imageUrl} 
-                          alt={file.filename}
-                          className="w-full h-full object-contain group-hover:scale-105 transition-transform"
-                        />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center">
-                          <Photo className="w-8 h-8 text-ui-fg-muted" />
-                        </div>
+                <Container 
+                  key={file.id} 
+                  className={clx(
+                    "p-0 overflow-hidden group cursor-pointer transition-all",
+                    isFloorPlan && "ring-2 ring-ui-fg-interactive ring-offset-2 hover:shadow-lg"
+                  )}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    if (isFloorPlan) {
+                      setSelectedFloorPlan(file);
+                      setIsFloorPlanDrawerOpen(true);
+                    } else {
+                      // Open image in new tab for other layouts
+                      if (imageUrl) window.open(imageUrl, "_blank");
+                    }
+                  }}
+                >
+                  <div className="aspect-video bg-ui-bg-subtle relative overflow-hidden">
+                    {imageUrl ? (
+                      <img 
+                        src={imageUrl} 
+                        alt={file.filename}
+                        className="w-full h-full object-contain group-hover:scale-105 transition-transform"
+                      />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center">
+                        <Photo className="w-8 h-8 text-ui-fg-muted" />
+                      </div>
+                    )}
+                    {/* Floor Plan Badge */}
+                    {isFloorPlan && (
+                      <div className="absolute top-2 right-2">
+                        <Badge color="purple" size="small" className="gap-1">
+                          <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
+                          </svg>
+                          3D Available
+                        </Badge>
+                      </div>
+                    )}
+                  </div>
+                  <div className="p-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <Text weight="plus" size="small">{file.filename}</Text>
+                        <Text size="xsmall" className="text-ui-fg-muted capitalize">
+                          {layoutTypeName.replace(/_/g, ' ')}
+                        </Text>
+                      </div>
+                      {isFloorPlan && (
+                        <Text size="xsmall" className="text-ui-fg-interactive">
+                          Click for 3D →
+                        </Text>
                       )}
                     </div>
-                    <div className="p-4">
-                      <Text weight="plus" size="small">{file.filename}</Text>
-                      <Text size="xsmall" className="text-ui-fg-muted capitalize">
-                        {layoutTypeName.replace(/_/g, ' ')}
-                      </Text>
-                    </div>
-                  </a>
+                  </div>
                 </Container>
               );
             })}
@@ -919,6 +1382,151 @@ export function CompletedDashboard({
               </Container>
             )}
           </div>
+          
+          {/* Hint text */}
+          {layoutFiles.some(f => f.metadata?.layout_type === "factory_floor_plan") && (
+            <div className="mt-4 p-3 rounded-lg bg-ui-bg-subtle border border-ui-border-base">
+              <Text size="small" className="text-ui-fg-muted">
+                💡 <span className="text-ui-fg-interactive font-medium">Click on the Floor Plan</span> to open it and generate a photorealistic 3D visualization of your factory.
+              </Text>
+            </div>
+          )}
+        </Tabs.Content>
+
+        {/* Videos Tab */}
+        <Tabs.Content value="videos" className="mt-4">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <Heading level="h2" className="text-xl">
+                Promotional Videos
+              </Heading>
+              <Text size="small" className="text-ui-fg-muted">
+                AI-generated video content for marketing and presentations
+              </Text>
+            </div>
+            <Button variant="primary" onClick={handleAddVideo} className="gap-2">
+              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M12 5v14M5 12h14" />
+              </svg>
+              Add Video
+            </Button>
+          </div>
+
+          {isLoadingVideos ? (
+            <Container className="p-12 text-center">
+              <div className="w-8 h-8 mx-auto mb-2 border-4 border-ui-border-base border-t-ui-fg-interactive rounded-full animate-spin" />
+              <Text className="text-ui-fg-muted">Loading videos...</Text>
+            </Container>
+          ) : videoProjects.length > 0 ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {videoProjects.map((video) => (
+                <Container 
+                  key={video.id} 
+                  className="p-0 overflow-hidden cursor-pointer hover:shadow-lg transition-shadow group"
+                  onClick={() => handleEditVideo(video)}
+                >
+                  {/* Thumbnail */}
+                  <div className="aspect-video bg-ui-bg-subtle relative overflow-hidden">
+                    {video.first_frame_url ? (
+                      <img 
+                        src={video.first_frame_url} 
+                        alt={video.title}
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                      />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center">
+                        <svg className="w-12 h-12 text-ui-fg-muted" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                          <rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18" />
+                          <line x1="7" y1="2" x2="7" y2="22" />
+                          <line x1="17" y1="2" x2="17" y2="22" />
+                          <line x1="2" y1="12" x2="22" y2="12" />
+                        </svg>
+                      </div>
+                    )}
+                    {/* Status Badge */}
+                    <div className="absolute top-2 right-2">
+                      <Badge 
+                        color={
+                          video.status === "completed" ? "green" :
+                          video.status === "frames_ready" ? "blue" :
+                          video.status === "video_generating" || video.status === "frames_generating" ? "orange" :
+                          "grey"
+                        }
+                        size="small"
+                      >
+                        {video.status === "completed" ? "Ready" :
+                         video.status === "frames_ready" ? "Frames Done" :
+                         video.status === "video_generating" ? "Rendering..." :
+                         video.status === "frames_generating" ? "Processing..." :
+                         "Draft"}
+                      </Badge>
+                    </div>
+                    {/* Play Button Overlay */}
+                    {video.video_url && (
+                      <div className="absolute inset-0 flex items-center justify-center bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <div className="w-14 h-14 rounded-full bg-white/90 flex items-center justify-center">
+                          <svg className="w-6 h-6 text-ui-fg-base ml-1" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M8 5v14l11-7z" />
+                          </svg>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  {/* Info */}
+                  <div className="p-4">
+                    <Text weight="plus" className="truncate">{video.title}</Text>
+                    <Text size="small" className="text-ui-fg-muted truncate mt-1">
+                      {video.prompt || "No prompt specified"}
+                    </Text>
+                    <Text size="xsmall" className="text-ui-fg-disabled mt-2">
+                      {new Date(video.created_at).toLocaleDateString()}
+                    </Text>
+                  </div>
+                </Container>
+              ))}
+              
+              {/* Add New Card */}
+              <Container 
+                className="p-0 overflow-hidden cursor-pointer hover:shadow-lg transition-shadow border-2 border-dashed border-ui-border-strong hover:border-ui-fg-interactive"
+                onClick={handleAddVideo}
+              >
+                <div className="aspect-video bg-ui-bg-subtle flex items-center justify-center">
+                  <div className="text-center">
+                    <div className="w-12 h-12 mx-auto mb-3 rounded-xl bg-gradient-to-br from-pink-500 to-rose-600 flex items-center justify-center">
+                      <svg className="w-6 h-6 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M12 5v14M5 12h14" />
+                      </svg>
+                    </div>
+                    <Text weight="plus">Create New Video</Text>
+                    <Text size="small" className="text-ui-fg-muted mt-1">
+                      AI-powered promotional content
+                    </Text>
+                  </div>
+                </div>
+              </Container>
+            </div>
+          ) : (
+            <Container className="p-12 text-center border-2 border-dashed border-ui-border-strong">
+              <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-gradient-to-br from-pink-500 to-rose-600 flex items-center justify-center">
+                <svg className="w-8 h-8 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18" />
+                  <line x1="7" y1="2" x2="7" y2="22" />
+                  <line x1="17" y1="2" x2="17" y2="22" />
+                  <line x1="2" y1="12" x2="22" y2="12" />
+                </svg>
+              </div>
+              <Heading level="h3" className="mb-2">No Videos Yet</Heading>
+              <Text className="text-ui-fg-muted mb-4 max-w-md mx-auto">
+                Create AI-generated promotional videos for your factory. Generate cinematic frames and smooth video transitions.
+              </Text>
+              <Button variant="primary" onClick={handleAddVideo} className="gap-2">
+                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M12 5v14M5 12h14" />
+                </svg>
+                Create First Video
+              </Button>
+            </Container>
+          )}
         </Tabs.Content>
 
         {/* Documents Tab - PDF & Images Only */}
@@ -1160,45 +1768,73 @@ export function CompletedDashboard({
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 {layoutFiles.map((file) => {
                   const imageUrl = file.file_path || file.storage_url || "";
-                  const layoutTypeName = file.metadata?.layout_type || file.metadata?.layoutType || "Layout";
-                  const layoutLabel = layoutTypeName.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase());
+                  const layoutTypeRaw = (file.metadata?.layout_type || file.metadata?.layoutType || "Layout").toString();
+                  const layoutLabel = layoutTypeRaw.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase());
+                  const layoutTypeLower = layoutTypeRaw.toLowerCase();
+                  const filenameLower = (file.filename || "").toLowerCase();
+                  const isFloorPlan = layoutTypeLower.includes("floor") || 
+                                      filenameLower.includes("floor_plan") ||
+                                      filenameLower.includes("floorplan");
                   
                   return (
-                    <Container key={file.id} className="p-0 overflow-hidden group hover:shadow-md transition-all">
-                      <a 
-                        href={imageUrl} 
-                        target="_blank" 
-                        rel="noopener noreferrer"
-                        download={file.filename}
-                        className="block"
-                      >
-                        <div className="aspect-[4/3] bg-ui-bg-subtle relative overflow-hidden">
-                          {imageUrl ? (
-                            <img 
-                              src={imageUrl} 
-                              alt={layoutLabel}
-                              className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-300"
-                            />
-                          ) : (
-                            <div className="w-full h-full flex items-center justify-center">
-                              <Photo className="w-8 h-8 text-ui-fg-muted" />
-                            </div>
-                          )}
-                          {/* Hover overlay */}
-                          <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
-                            <div className="opacity-0 group-hover:opacity-100 transition-opacity bg-white rounded-full p-3 shadow-lg">
+                    <Container 
+                      key={file.id} 
+                      className={clx(
+                        "p-0 overflow-hidden group hover:shadow-md transition-all cursor-pointer",
+                        isFloorPlan && "ring-2 ring-ui-fg-interactive ring-offset-2"
+                      )}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        if (isFloorPlan) {
+                          setSelectedFloorPlan(file);
+                          setIsFloorPlanDrawerOpen(true);
+                        } else {
+                          if (imageUrl) window.open(imageUrl, "_blank");
+                        }
+                      }}
+                    >
+                      <div className="aspect-[4/3] bg-ui-bg-subtle relative overflow-hidden">
+                        {imageUrl ? (
+                          <img 
+                            src={imageUrl} 
+                            alt={layoutLabel}
+                            className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-300"
+                          />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center">
+                            <Photo className="w-8 h-8 text-ui-fg-muted" />
+                          </div>
+                        )}
+                        {/* Hover overlay */}
+                        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
+                          <div className="opacity-0 group-hover:opacity-100 transition-opacity bg-white rounded-full p-3 shadow-lg">
+                            {isFloorPlan ? (
+                              <svg className="w-5 h-5 text-ui-fg-base" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
+                              </svg>
+                            ) : (
                               <ArrowDownTray className="w-5 h-5 text-ui-fg-base" />
-                            </div>
+                            )}
                           </div>
                         </div>
-                        <div className="p-4 flex items-center justify-between">
-                          <div>
-                            <Text weight="plus" size="small">{layoutLabel}</Text>
-                            <Text size="xsmall" className="text-ui-fg-muted">PNG Image</Text>
+                        {/* Floor Plan Badge */}
+                        {isFloorPlan && (
+                          <div className="absolute top-2 right-2">
+                            <Badge color="purple" size="small">3D View</Badge>
                           </div>
-                          <Badge color="cyan" size="small">Download</Badge>
+                        )}
+                      </div>
+                      <div className="p-4 flex items-center justify-between">
+                        <div>
+                          <Text weight="plus" size="small">{layoutLabel}</Text>
+                          <Text size="xsmall" className="text-ui-fg-muted">PNG Image</Text>
                         </div>
-                      </a>
+                        {isFloorPlan ? (
+                          <Badge color="purple" size="small">Generate 3D</Badge>
+                        ) : (
+                          <Badge color="cyan" size="small">View</Badge>
+                        )}
+                      </div>
                     </Container>
                   );
                 })}
@@ -1282,6 +1918,29 @@ export function CompletedDashboard({
         onOpenChange={setIsReportDrawerOpen}
         existingReportUrl={project.full_report_pdf_url}
         onReportGenerated={handleReportGenerated}
+      />
+
+      {/* Asset Detail Drawer */}
+      <AssetDetailDrawer
+        asset={selectedAsset}
+        allSuppliers={suppliers}
+        open={isAssetDrawerOpen}
+        onOpenChange={(open) => {
+          setIsAssetDrawerOpen(open);
+          if (!open) setSelectedAsset(null);
+        }}
+      />
+
+      {/* Floor Plan Drawer */}
+      <FloorPlanDrawer
+        isOpen={isFloorPlanDrawerOpen}
+        onClose={() => {
+          setIsFloorPlanDrawerOpen(false);
+          setSelectedFloorPlan(null);
+        }}
+        floorPlan={selectedFloorPlan}
+        planningData={planningData}
+        projectId={project.id}
       />
     </div>
   );

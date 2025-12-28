@@ -332,31 +332,37 @@ Be realistic, use industry-standard metrics, and produce investor-grade financia
 
 export const ELITE_FLOOR_PLAN_PROMPT = `You are an industrial engineering expert designing a professional factory floor plan.
 
-Generate a SINGLE unified factory floor plan that demonstrates:
+Generate a SINGLE unified, CLEAN factory floor plan image:
 
-1. PROFESSIONAL ZONING:
-   - Clear separation of production, storage, QC, and admin areas
-   - Logical material flow from intake to output
-   - Safety zone boundaries
-   - Emergency exit paths
+CRITICAL REQUIREMENTS - DO NOT INCLUDE:
+- NO measurements or dimensions text
+- NO labels or text annotations
+- NO zone markings or zone colors
+- NO grid lines or scale references
+- NO legend or key
+- ONLY the architectural layout with equipment placement
 
-2. ENGINEERING BEST PRACTICES:
-   - Efficient equipment placement
-   - Adequate spacing for operation and maintenance
-   - Proper ventilation and utility access points
-   - ATEX zone considerations where applicable
+WHAT TO SHOW:
+1. CLEAN ARCHITECTURAL LAYOUT:
+   - Walls and structural elements (grey/black lines)
+   - Doors and entry points
+   - Equipment footprints as simple shapes
+   - Clear pathways and corridors
 
-3. VISUAL QUALITY:
-   - Clean, professional 2D layout
-   - Clear labeling of zones and equipment
-   - Scale reference (grid or dimensions)
-   - Color coding for different zones
+2. EQUIPMENT PLACEMENT:
+   - Show equipment as simple geometric shapes (rectangles, squares)
+   - Position equipment logically for workflow
+   - Leave adequate spacing between machines
+   - Show loading docks and entry points
 
-4. PRACTICAL CONSIDERATIONS:
-   - AGV/forklift pathways
-   - Loading dock positioning
-   - Utility room placement
-   - Future expansion areas`;
+3. VISUAL STYLE:
+   - Minimalist, professional architectural drawing style
+   - White/light grey background
+   - Simple black outlines for walls
+   - Subtle fill colors for equipment (no labels)
+   - Clean, uncluttered appearance
+
+The result should look like a clean architectural blueprint without any text, measurements, or zone markings.`;
 
 export const ELITE_ATEX_ZONES_PROMPT = `You are a safety engineering expert adding ATEX zone classifications to a factory layout.
 

@@ -8,6 +8,7 @@ import assetsRouter from "./routes/assets.js";
 import stepsRouter from "./routes/steps.js";
 import streamRouter from "./routes/stream.js";
 import dataRouter from "./routes/data.js";
+import videosRouter from "./routes/videos.js";
 import { logger } from "./utils/logger.js";
 
 dotenv.config();
@@ -34,6 +35,7 @@ app.use("/api/projects", assetsRouter);
 app.use("/api/projects", stepsRouter);
 app.use("/api/projects", streamRouter);
 app.use("/api/projects", dataRouter);
+app.use("/api/projects", videosRouter);
 
 app.get("/health", (req, res) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });

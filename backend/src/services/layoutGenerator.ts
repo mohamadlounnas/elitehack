@@ -198,56 +198,28 @@ class LayoutGeneratorService {
         });
       }
 
-      // Build equipment list from asset names and appearance
+      // Build equipment list from asset names (for positioning, no labels in output)
       const equipmentList = assets.length > 0
         ? assets.map(asset => {
-            const appearance = asset.appearance || asset.description || "standard equipment";
-            return `- ${asset.name} (${asset.type || "equipment"}): ${appearance}`;
+            return `- ${asset.name} (${asset.type || "equipment"})`;
           }).join("\n")
-        : "No specific equipment listed";
+        : "Standard industrial equipment";
 
-      // Build production zones info
-      const zonesInfo = planningData.factory_engineering?.zoning_concept?.zones
-        ? planningData.factory_engineering.zoning_concept.zones.map((z: any) => 
-            `- ${z.zone_name}: ${z.purpose} (${z.area_sqm}m²)`
-          ).join("\n")
-        : "Standard production zones";
-
-      // Build production lines info
-      const productionLinesInfo = planningData.production_lines
-        ? planningData.production_lines.map((line: any) => 
-            `- ${line.line_name}: ${line.function}`
-          ).join("\n")
-        : "Standard production line";
-
-      // Elite prompt with comprehensive context
+      // Elite prompt with comprehensive context - CLEAN floor plan (no labels, no measurements, no zones)
       const prompt = `${ELITE_FLOOR_PLAN_PROMPT}
 
-FACTORY SPECIFICATIONS:
-- Dimensions: ${planningData.factory_dimensions?.width || 50}m x ${planningData.factory_dimensions?.length || 100}m
-- Height: ${planningData.factory_dimensions?.height || 8}m
-- Floors: ${planningData.factory_dimensions?.floors || 1}
+FACTORY SIZE: ${planningData.factory_dimensions?.width || 50}m x ${planningData.factory_dimensions?.length || 100}m
 
-PRODUCTION PROCESS: ${planningData.production_process || "General Manufacturing"}
-
-PRODUCTION ZONES:
-${zonesInfo}
-
-PRODUCTION LINES:
-${productionLinesInfo}
-
-EQUIPMENT TO INCLUDE:
+EQUIPMENT TO POSITION (show as simple shapes, NO labels):
 ${equipmentList}
 
-MATERIAL FLOW:
-- Raw Material Intake: ${planningData.factory_engineering?.material_flow?.raw_material_intake || "Main entrance loading dock"}
-- Production Flow: ${planningData.factory_engineering?.material_flow?.production_flow || "Linear production flow"}
-- Finished Goods Output: ${planningData.factory_engineering?.material_flow?.finished_goods_output || "Shipping dock"}
+LAYOUT REQUIREMENTS:
+- Main production area in center
+- Raw material intake area
+- Finished goods/shipping area
+- Pathways between equipment
 
-SAFETY REQUIREMENTS:
-${planningData.factory_engineering?.safety_compliance?.atex_requirements || "Standard industrial safety zones"}
-
-Generate a SINGLE unified professional factory floor plan that integrates all these elements cohesively.`;
+REMEMBER: Generate a CLEAN architectural floor plan with NO text, NO measurements, NO labels, NO zone markings. Just the building layout with equipment shown as simple shapes.`;
 
       contentParts.push({
         type: "text",

@@ -170,13 +170,18 @@ export function FullReportDrawer({
 
     eventSource.addEventListener("done", (e) => {
       const data = JSON.parse(e.data);
+      console.log("Done event received:", data);
       if (data.success) {
         updateStepStatus("finalizing", "completed");
-        setDownloadUrl(dataApi.getFullReportDownloadUrl(projectId));
+        const url = dataApi.getFullReportDownloadUrl(projectId);
+        console.log("Setting download URL:", url);
+        setDownloadUrl(url);
         setIsComplete(true);
+        setIsGenerating(false);
         onReportGenerated?.();
+      } else {
+        setIsGenerating(false);
       }
-      setIsGenerating(false);
       eventSource.close();
     });
 
@@ -405,11 +410,15 @@ export function FullReportDrawer({
             </Button>
 
             {/* Generate or Download button */}
-            {isComplete && downloadUrl ? (
+            {isComplete ? (
               <Button variant="primary" className="flex-1" asChild>
-                <a href={downloadUrl} target="_blank" rel="noopener noreferrer">
+                <a 
+                  href={downloadUrl || dataApi.getFullReportDownloadUrl(projectId)} 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                >
                   <ArrowDownTray className="mr-2" />
-                  Download Report
+                  Download Report (PDF)
                 </a>
               </Button>
             ) : (

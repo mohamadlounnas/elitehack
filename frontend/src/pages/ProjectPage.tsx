@@ -20,6 +20,7 @@ export function ProjectPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [isStepProcessing, setIsStepProcessing] = useState(false); // Track if step is actively streaming
   const [hasStepError, setHasStepError] = useState(false); // Track if step has an error
+  const [hasUserInteraction, setHasUserInteraction] = useState(false); // Track if user interacted (to disable auto-next)
 
   useEffect(() => {
     if (id) {
@@ -207,6 +208,7 @@ export function ProjectPage() {
               project={project}
               onStreamingStatusChange={setIsStepProcessing}
               onErrorStatusChange={setHasStepError}
+              onUserInteraction={setHasUserInteraction}
             />
           </div>
         </TwoColumnPage.Main>
@@ -215,6 +217,7 @@ export function ProjectPage() {
             currentStep={project.current_step} 
             isStepProcessing={isStepProcessing}
             hasError={hasStepError}
+            hasUserInteraction={hasUserInteraction}
             onRetry={handleRetryStep}
             onNextStep={handleNextStep}
             onPrevStep={handlePrevStep}

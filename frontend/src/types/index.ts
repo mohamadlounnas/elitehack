@@ -180,3 +180,17 @@ export interface StepStatus {
   message?: string;
 }
 
+export interface VideoProject {
+  id: string;
+  project_id: string;
+  title: string;
+  prompt: string | null;
+  first_frame_url: string | null;
+  last_frame_url: string | null;
+  video_url: string | null;
+  status: "draft" | "frames_generating" | "frames_ready" | "video_generating" | "completed";
+  metadata?: Record<string, any>;
+  created_at: string;
+  updated_at: string;
+}
+

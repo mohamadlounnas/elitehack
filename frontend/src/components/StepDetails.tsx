@@ -27,6 +27,7 @@ interface StepDetailsProps {
   project?: any; // Project data including business_plan_excel
   onStreamingStatusChange?: (isStreaming: boolean) => void;
   onErrorStatusChange?: (hasError: boolean) => void;
+  onUserInteraction?: (hasInteracted: boolean) => void;
 }
 
 interface StreamUpdate {
@@ -75,13 +76,15 @@ export function StepDetails({
   messages = [],
   project,
   onStreamingStatusChange,
-  onErrorStatusChange
+  onErrorStatusChange,
+  onUserInteraction
 }: StepDetailsProps) {
   const [streamContent, setStreamContent] = useState<string>("");
   const [streamProgress, setStreamProgress] = useState<number>(0);
   const [streamAssets, setStreamAssets] = useState<Map<string, any>>(new Map());
   const [streamSuppliers, setStreamSuppliers] = useState<Map<string, any[]>>(new Map());
   const [streamLayouts, setStreamLayouts] = useState<Map<string, string>>(new Map());
+  const [currentGeneratingLayout, setCurrentGeneratingLayout] = useState<string | null>(null);
   const [isStreaming, setIsStreaming] = useState(false);
   const [isForcingNext, setIsForcingNext] = useState(false);
   const [hasError, setHasError] = useState(false);
@@ -89,6 +92,7 @@ export function StepDetails({
   // Asset selection state (for assetSelection step)
   const [selectedAssets, setSelectedAssets] = useState<Set<string>>(new Set());
   const [isSelectionSaving, setIsSelectionSaving] = useState(false);
+  const [hasInteractedWithAssets, setHasInteractedWithAssets] = useState(false);
   
   // Initialize selected assets when assets prop changes
   useEffect(() => {
@@ -120,12 +124,23 @@ export function StepDetails({
     onErrorStatusChange?.(hasError);
   }, [hasError, onErrorStatusChange]);
 
+  // Notify parent when user interacts with assets (to disable auto-next)
+  useEffect(() => {
+    onUserInteraction?.(hasInteractedWithAssets);
+  }, [hasInteractedWithAssets, onUserInteraction]);
+
+  // Reset interaction state when step changes
+  useEffect(() => {
+    setHasInteractedWithAssets(false);
+  }, [currentStep]);
+
   useEffect(() => {
     setStreamContent("");
     setStreamProgress(0);
     setStreamAssets(new Map());
     setStreamSuppliers(new Map());
     setStreamLayouts(new Map());
+    setCurrentGeneratingLayout(null);
     setIsStreaming(false);
     setIsForcingNext(false);
     setHasError(false); // Reset error state when step changes
@@ -189,6 +204,12 @@ export function StepDetails({
           // Handle layout updates - update as each layout completes
           if (data.layoutType) {
             console.log("[StepDetails] Layout update:", { layoutType: data.layoutType, type: data.type, hasImageUrl: !!data.imageUrl });
+            
+            // Track which layout is currently generating
+            if (data.type === "generating") {
+              setCurrentGeneratingLayout(data.layoutType);
+            }
+            
             if (data.imageUrl) {
               console.log("[StepDetails] Setting layout image for:", data.layoutType);
               setStreamLayouts((prev) => {
@@ -197,6 +218,10 @@ export function StepDetails({
                 console.log("[StepDetails] streamLayouts updated, size:", newMap.size);
                 return newMap;
               });
+              // Clear currently generating when complete
+              if (data.type === "complete") {
+                setCurrentGeneratingLayout(null);
+              }
             }
             if (data.progress !== undefined) {
               setStreamProgress(data.progress);
@@ -493,6 +518,7 @@ export function StepDetails({
         // State is managed at component level: selectedAssets, isSelectionSaving
         
         const toggleAsset = (assetId: string) => {
+          setHasInteractedWithAssets(true); // User interacted - disable auto-next
           setSelectedAssets(prev => {
             const newSet = new Set(prev);
             if (newSet.has(assetId)) {
@@ -504,8 +530,14 @@ export function StepDetails({
           });
         };
         
-        const selectAll = () => setSelectedAssets(new Set(assets.map(a => a.id)));
-        const deselectAll = () => setSelectedAssets(new Set());
+        const selectAll = () => {
+          setHasInteractedWithAssets(true);
+          setSelectedAssets(new Set(assets.map(a => a.id)));
+        };
+        const deselectAll = () => {
+          setHasInteractedWithAssets(true);
+          setSelectedAssets(new Set());
+        };
         
         const handleContinue = async () => {
           setIsSelectionSaving(true);
@@ -529,89 +561,136 @@ export function StepDetails({
           return acc;
         }, {} as Record<string, typeof assets>);
         
+        // Calculate total estimated cost of selected assets
+        const totalSelectedCost = assets
+          .filter(a => selectedAssets.has(a.id))
+          .reduce((sum, a) => sum + (a.specifications?.estimated_cost_usd || 0), 0);
+        
+        const typeCount = Object.keys(assetsByType).length;
+        
         return (
-          <Container className="flex flex-col gap-y-4">
-            {/* Header */}
-            <div className="flex items-center justify-between border-b border-ui-border-base pb-4">
-              <div>
-                <Text weight="plus" size="large">Select Assets to Process</Text>
-                <Text size="small" className="text-ui-fg-muted mt-1">
-                  Choose which equipment and machinery to include in image generation, sourcing, and cost analysis
+          <Container className="flex flex-col gap-y-5">
+            {/* Header with gradient accent */}
+            <div className="relative overflow-hidden rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 p-6 text-white">
+              <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full -translate-y-1/2 translate-x-1/2" />
+              <div className="relative">
+                <div className="flex items-center gap-x-2 mb-2">
+                  <span className="text-2xl">🔧</span>
+                  <Text weight="plus" className="text-white text-xl">Select Assets to Process</Text>
+                </div>
+                <Text size="small" className="text-blue-100 max-w-lg">
+                  Review and choose which equipment and machinery to include in the next processing steps. 
+                  Unselected items will be skipped.
                 </Text>
               </div>
-              <Badge color="blue" size="small">
-                {selectedAssets.size} / {assets.length} selected
-              </Badge>
             </div>
             
-            {/* Quick Actions */}
-            <div className="flex items-center gap-x-2">
-              <Button variant="secondary" size="small" onClick={selectAll}>
-                Select All
-              </Button>
-              <Button variant="secondary" size="small" onClick={deselectAll}>
-                Deselect All
-              </Button>
+            {/* Stats Cards */}
+            <div className="grid grid-cols-3 gap-4">
+              <div className="bg-white border border-ui-border-base rounded-lg p-4 text-center">
+                <Text size="xsmall" className="text-ui-fg-muted uppercase tracking-wider">Total Assets</Text>
+                <Text weight="plus" className="text-2xl text-ui-fg-base mt-1">{assets.length}</Text>
+              </div>
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-center">
+                <Text size="xsmall" className="text-blue-600 uppercase tracking-wider">Selected</Text>
+                <Text weight="plus" className="text-2xl text-blue-700 mt-1">{selectedAssets.size}</Text>
+              </div>
+              <div className="bg-green-50 border border-green-200 rounded-lg p-4 text-center">
+                <Text size="xsmall" className="text-green-600 uppercase tracking-wider">Est. Value</Text>
+                <Text weight="plus" className="text-2xl text-green-700 mt-1">
+                  ${totalSelectedCost > 1000000 
+                    ? `${(totalSelectedCost / 1000000).toFixed(1)}M` 
+                    : totalSelectedCost > 1000 
+                      ? `${(totalSelectedCost / 1000).toFixed(0)}K`
+                      : totalSelectedCost.toLocaleString()
+                  }
+                </Text>
+              </div>
+            </div>
+            
+            {/* Quick Actions Bar */}
+            <div className="flex items-center justify-between bg-ui-bg-subtle rounded-lg p-3">
+              <div className="flex items-center gap-x-3">
+                <Button variant="secondary" size="small" onClick={selectAll}>
+                  ✓ Select All
+                </Button>
+                <Button variant="secondary" size="small" onClick={deselectAll}>
+                  ✕ Clear Selection
+                </Button>
+              </div>
+              <Text size="xsmall" className="text-ui-fg-muted">
+                {typeCount} equipment {typeCount === 1 ? 'category' : 'categories'}
+              </Text>
             </div>
             
             {/* Assets grouped by type */}
             <div className="space-y-4">
-              {Object.entries(assetsByType).map(([type, typeAssets]) => (
-                <div key={type} className="border border-ui-border-base rounded-lg overflow-hidden">
-                  {/* Type Header */}
-                  <div className="bg-ui-bg-subtle px-4 py-2 border-b border-ui-border-base flex items-center justify-between">
-                    <Text weight="plus" size="small">{type}</Text>
-                    <Badge color="grey" size="2xsmall">{typeAssets.length} items</Badge>
-                  </div>
-                  
-                  {/* Assets */}
-                  <div className="divide-y divide-ui-border-base">
-                    {typeAssets.map((asset) => {
-                      const isSelected = selectedAssets.has(asset.id);
-                      return (
-                        <div 
-                          key={asset.id}
-                          className={`flex items-center gap-x-4 px-4 py-3 cursor-pointer hover:bg-ui-bg-subtle-hover transition-colors ${
-                            isSelected ? "bg-blue-50/50" : ""
-                          }`}
-                          onClick={() => toggleAsset(asset.id)}
-                        >
-                          <Checkbox 
-                            checked={isSelected}
-                            onCheckedChange={() => toggleAsset(asset.id)}
-                          />
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-x-2">
-                              <Text weight="plus" size="small">{asset.name}</Text>
-                              {asset.specifications?.estimated_cost_usd && (
-                                <Badge color="green" size="2xsmall">
-                                  ${asset.specifications.estimated_cost_usd.toLocaleString()}
-                                </Badge>
+              {Object.entries(assetsByType).map(([type, typeAssets]) => {
+                const selectedInType = typeAssets.filter(a => selectedAssets.has(a.id)).length;
+                return (
+                  <div key={type} className="border border-ui-border-base rounded-lg overflow-hidden shadow-sm">
+                    {/* Type Header */}
+                    <div className="bg-gradient-to-r from-ui-bg-subtle to-white px-4 py-3 border-b border-ui-border-base flex items-center justify-between">
+                      <div className="flex items-center gap-x-2">
+                        <span className="text-lg">📦</span>
+                        <Text weight="plus" size="small">{type}</Text>
+                      </div>
+                      <Badge color={selectedInType === typeAssets.length ? "green" : selectedInType > 0 ? "blue" : "grey"} size="small">
+                        {selectedInType} / {typeAssets.length} selected
+                      </Badge>
+                    </div>
+                    
+                    {/* Assets Grid */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 p-3 bg-white">
+                      {typeAssets.map((asset) => {
+                        const isSelected = selectedAssets.has(asset.id);
+                        return (
+                          <div 
+                            key={asset.id}
+                            className={`flex items-start gap-x-3 p-3 rounded-lg cursor-pointer transition-all duration-200 border-2 ${
+                              isSelected 
+                                ? "bg-blue-50 border-blue-300 shadow-sm" 
+                                : "bg-ui-bg-subtle border-transparent hover:border-ui-border-base hover:bg-white"
+                            }`}
+                            onClick={() => toggleAsset(asset.id)}
+                          >
+                            <div className={`mt-0.5 w-5 h-5 rounded flex items-center justify-center transition-colors ${
+                              isSelected ? "bg-blue-600" : "bg-white border-2 border-ui-border-base"
+                            }`}>
+                              {isSelected && (
+                                <Check className="w-3 h-3 text-white" />
                               )}
                             </div>
-                            {asset.description && (
-                              <Text size="xsmall" className="text-ui-fg-muted line-clamp-1 mt-0.5">
-                                {asset.description}
+                            <div className="flex-1 min-w-0">
+                              <Text weight="plus" size="small" className={isSelected ? "text-blue-900" : "text-ui-fg-base"}>
+                                {asset.name}
                               </Text>
-                            )}
-                          </div>
-                          {isSelected && (
-                            <div className="flex items-center gap-x-1">
-                              <div className="w-2 h-2 rounded-full bg-green-500" />
-                              <Text size="xsmall" className="text-green-600">Selected</Text>
+                              {asset.description && (
+                                <Text size="xsmall" className={`line-clamp-2 mt-0.5 ${isSelected ? "text-blue-700" : "text-ui-fg-muted"}`}>
+                                  {asset.description}
+                                </Text>
+                              )}
+                              {asset.specifications?.estimated_cost_usd && (
+                                <div className="mt-2">
+                                  <Badge color={isSelected ? "blue" : "grey"} size="2xsmall">
+                                    ${asset.specifications.estimated_cost_usd.toLocaleString()}
+                                  </Badge>
+                                </div>
+                              )}
                             </div>
-                          )}
-                        </div>
-                      );
-                    })}
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
             
             {assets.length === 0 && (
-              <div className="text-center py-8 bg-ui-bg-subtle rounded-lg border border-dashed border-ui-border-base">
-                <Text className="text-ui-fg-muted">No assets found from planning.</Text>
+              <div className="text-center py-12 bg-ui-bg-subtle rounded-lg border border-dashed border-ui-border-base">
+                <span className="text-4xl">📋</span>
+                <Text className="text-ui-fg-muted mt-3">No assets found from planning.</Text>
                 <Text size="small" className="text-ui-fg-muted mt-1">
                   Please go back to the planning step to generate assets.
                 </Text>
@@ -619,40 +698,50 @@ export function StepDetails({
             )}
             
             {/* Info Panel */}
-            <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
+            <div className="p-4 bg-gradient-to-r from-amber-50 to-orange-50 rounded-lg border border-amber-200">
               <div className="flex items-start gap-x-3">
-                <span className="text-blue-500 text-lg">💡</span>
+                <span className="text-amber-500 text-xl">⚡</span>
                 <div>
-                  <Text size="small" weight="plus" className="text-blue-700">
-                    What happens next?
+                  <Text size="small" weight="plus" className="text-amber-800">
+                    Processing Pipeline
                   </Text>
-                  <Text size="xsmall" className="text-blue-600 mt-1">
-                    Selected assets will be processed through:
+                  <Text size="xsmall" className="text-amber-700 mt-1">
+                    Selected assets will go through these automated steps:
                   </Text>
-                  <ul className="text-blue-600 text-xs mt-2 space-y-1">
-                    <li>• <strong>Image Generation:</strong> AI-generated visuals for each asset</li>
-                    <li>• <strong>Supplier Sourcing:</strong> Finding 3-5 suppliers per asset</li>
-                    <li>• <strong>Cost Analysis:</strong> Detailed TCO calculations</li>
-                  </ul>
+                  <div className="flex flex-wrap gap-2 mt-3">
+                    <Badge color="orange" size="small">🖼️ Image Generation</Badge>
+                    <Badge color="orange" size="small">🔍 Supplier Sourcing</Badge>
+                    <Badge color="orange" size="small">💰 Cost Analysis</Badge>
+                  </div>
+                  <Text size="xsmall" className="text-amber-600 mt-2 italic">
+                    Tip: Fewer assets = faster processing. Select only what you need.
+                  </Text>
                 </div>
               </div>
             </div>
             
             {/* Continue Button */}
-            <div className="flex justify-end pt-4 border-t border-ui-border-base">
+            <div className="flex items-center justify-between pt-4 border-t border-ui-border-base">
+              <Text size="small" className="text-ui-fg-muted">
+                {selectedAssets.size === 0 
+                  ? "Select at least one asset to continue"
+                  : `Ready to process ${selectedAssets.size} asset${selectedAssets.size > 1 ? 's' : ''}`
+                }
+              </Text>
               <Button 
                 variant="primary"
                 onClick={handleContinue}
                 disabled={selectedAssets.size === 0 || isSelectionSaving}
+                className="px-6"
               >
                 {isSelectionSaving ? (
                   <>
                     <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
-                    Saving...
+                    Processing...
                   </>
                 ) : (
                   <>
-                    Continue with {selectedAssets.size} assets
+                    Continue with {selectedAssets.size} Assets →
                   </>
                 )}
               </Button>
@@ -662,30 +751,30 @@ export function StepDetails({
       }
 
       case "layoutGenerating": {
-        // Determine current generating layout based on progress
-        const currentLayoutIndex = Math.max(0, streamProgress - 1);
-        const currentlyGenerating = streamProgress > 0 && streamProgress <= layoutOrder.length 
-          ? layoutOrder[currentLayoutIndex] 
-          : null;
+        // Use the tracked currentGeneratingLayout state for accurate real-time updates
         const completedCount = streamLayouts.size;
+        const isAllComplete = completedCount === layoutOrder.length;
         
         return (
           <Container className="flex flex-col gap-y-4">
             {/* Header with progress */}
             <div className="flex items-center justify-between border-b border-ui-border-base pb-3">
               <div className="flex items-center gap-x-3">
-                {isStreaming && (
+                {isStreaming && !isAllComplete && (
                   <div className="w-2.5 h-2.5 bg-blue-500 rounded-full animate-pulse" />
+                )}
+                {isAllComplete && (
+                  <Check className="w-5 h-5 text-green-500" />
                 )}
                 <Text weight="plus" size="base">
                   Layout Generation
                 </Text>
-                <Badge color={completedCount === layoutOrder.length ? "green" : "blue"} size="small">
+                <Badge color={isAllComplete ? "green" : "blue"} size="small">
                   {completedCount} / {layoutOrder.length}
                 </Badge>
               </div>
               <div className="flex items-center gap-x-3">
-                {isStreaming && (
+                {isStreaming && !isAllComplete && (
                   <Text size="xsmall" className="text-ui-fg-muted font-mono bg-ui-bg-subtle px-2 py-1 rounded">
                       {formattedTime}
                     </Text>
@@ -705,9 +794,9 @@ export function StepDetails({
             <div className="space-y-4">
               {layoutOrder.map((layoutType, index) => {
                 const imageUrl = streamLayouts.get(layoutType);
-                const isCurrentlyGenerating = currentlyGenerating === layoutType && !imageUrl;
+                const isCurrentlyGenerating = currentGeneratingLayout === layoutType;
                 const isCompleted = !!imageUrl;
-                const isPending = index > streamProgress - 1 && !imageUrl;
+                const isPending = !isCompleted && !isCurrentlyGenerating;
                 
                 return (
                   <div 

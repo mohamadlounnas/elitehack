@@ -2,8 +2,16 @@ import { Router } from "express";
 import { supabase } from "../utils/supabase.js";
 import { logger } from "../utils/logger.js";
 import { fullReportGenerator } from "../services/fullReportGenerator.js";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 import fs from "fs";
 import path from "path";
+import dotenv from "dotenv";
+
+dotenv.config();
+
+// Initialize Gemini AI for realistic renders
+const geminiApiKey = process.env.GEMINI_API_KEY || "";
+const genAI = geminiApiKey ? new GoogleGenerativeAI(geminiApiKey) : null;
 
 const router = Router();
 
@@ -780,6 +788,198 @@ router.get("/:id/full-report-pdf", async (req, res) => {
   } catch (error: any) {
     logger.error("Error serving full report PDF", error, { projectId: req.params.id });
     res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * Generate Realistic Factory Render (SSE Streaming)
+ * Generates a photorealistic image based on the floor plan
+ */
+router.get("/:id/generate-realistic-render/stream", async (req, res) => {
+  const { id } = req.params;
+  logger.info("Starting realistic render generation", { projectId: id });
+
+  // Setup SSE
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+  res.setHeader("Access-Control-Allow-Origin", "*");
+
+  const sendEvent = (type: string, data: any) => {
+    res.write(`data: ${JSON.stringify({ type, ...data })}\n\n`);
+  };
+
+  try {
+    sendEvent("progress", { message: "Fetching project data..." });
+
+    // Get project and planning data
+    const { data: project, error: projectError } = await supabase
+      .from("projects")
+      .select("id, name, planning_data")
+      .eq("id", id)
+      .single();
+
+    if (projectError || !project) {
+      throw new Error("Project not found");
+    }
+
+    sendEvent("progress", { message: "Analyzing floor plan layout..." });
+
+    // Get floor plan from generated files
+    // First try by layout_type
+    let floorPlanFile = null;
+    
+    const { data: byType } = await supabase
+      .from("generated_files")
+      .select("*")
+      .eq("project_id", id)
+      .eq("metadata->>layout_type", "floor_plan")
+      .limit(1)
+      .maybeSingle();
+
+    if (byType) {
+      floorPlanFile = byType;
+    } else {
+      // Try by filename
+      const { data: byFilename } = await supabase
+        .from("generated_files")
+        .select("*")
+        .eq("project_id", id)
+        .ilike("filename", "%floor_plan%")
+        .limit(1)
+        .maybeSingle();
+      
+      if (byFilename) {
+        floorPlanFile = byFilename;
+      }
+    }
+
+    if (!floorPlanFile) {
+      throw new Error("Floor plan not found. Please generate layouts first.");
+    }
+
+    sendEvent("progress", { message: "Preparing AI render prompt..." });
+
+    // Extract planning data for context
+    const planningData = project.planning_data as any;
+    const identity = planningData?.industrial_identity;
+    const facility = planningData?.facility_specifications;
+    const productionLines = planningData?.production_lines || [];
+
+    // Build comprehensive prompt for realistic rendering
+    const factoryName = identity?.brand_name || identity?.company_name || project.name || "Factory";
+    const industry = identity?.industry_sector || "manufacturing";
+    const dimensions = facility?.dimensions 
+      ? `${facility.dimensions.length}m x ${facility.dimensions.width}m` 
+      : "large industrial";
+    const totalArea = facility?.total_area || 5000;
+    const zones = facility?.zones || [];
+    
+    const prompt = `Create a highly photorealistic architectural visualization of a modern ${industry} factory interior.
+
+Factory Details:
+- Name: ${factoryName}
+- Industry: ${industry}
+- Size: ${dimensions} (${totalArea} sqm total area)
+- Production Lines: ${productionLines.length > 0 ? productionLines.map((l: any) => l.name || l.type).join(", ") : "automated production"}
+- Zones: ${zones.length > 0 ? zones.map((z: any) => z.name || z.type).join(", ") : "production, storage, shipping"}
+
+Visualization Requirements:
+- Photorealistic interior view of the factory floor
+- Modern industrial architecture with high ceilings and natural lighting
+- Clean, organized workspace with visible production equipment
+- Professional lighting with skylights and LED fixtures
+- Safety markings and industrial flooring
+- Workers in safety gear operating machinery (optional, small scale)
+- Atmospheric perspective showing depth and scale
+- Photo quality like a professional architectural photography shot
+- Wide angle view showing the scale of the facility
+- Modern, clean, state-of-the-art facility aesthetic
+
+Style: Professional architectural visualization, photorealistic, magazine quality
+Camera: Wide angle interior shot, eye-level perspective
+Lighting: Natural daylight from skylights mixed with industrial LED lighting
+Quality: Ultra high detail, 8K quality, photorealistic rendering
+
+DO NOT include any text, labels, measurements, or 2D elements.
+DO NOT mix 2D floor plan elements with 3D visualization.
+Create a PURE photorealistic 3D interior visualization as if photographed by a professional camera.`;
+
+    sendEvent("progress", { message: "Generating photorealistic render with AI..." });
+
+    // Check if Gemini AI is configured
+    if (!genAI) {
+      throw new Error("Gemini AI is not configured. Please set GEMINI_API_KEY in environment variables.");
+    }
+
+    // Use Gemini 2.5 Flash Image model (same as imageGenerationService)
+    const model = genAI.getGenerativeModel({
+      model: "models/gemini-2.5-flash-image",
+    });
+
+    sendEvent("progress", { message: "Rendering factory visualization..." });
+
+    // Generate the image
+    const result = await model.generateContent(prompt);
+    const response = result.response;
+
+    let imageUrl = "";
+
+    // Extract image from response (same pattern as imageGenerationService)
+    const candidates = response.candidates;
+    if (candidates && candidates.length > 0) {
+      const candidate = candidates[0];
+      const content = candidate.content;
+      const parts = content.parts;
+
+      if (parts && parts.length > 0) {
+        for (const part of parts) {
+          if ("inlineData" in part && part.inlineData) {
+            const imageData = part.inlineData.data;
+            const mimeType = part.inlineData.mimeType || "image/png";
+            imageUrl = `data:${mimeType};base64,${imageData}`;
+            break;
+          }
+        }
+      }
+    }
+
+    if (!imageUrl) {
+      throw new Error("Failed to generate image. The AI model did not return an image. Please try again.");
+    }
+
+    sendEvent("progress", { message: "Finalizing render..." });
+
+    // Optionally save the image to the project
+    const { error: saveError } = await supabase
+      .from("generated_files")
+      .insert({
+        project_id: id,
+        filename: `realistic_render_${Date.now()}.png`,
+        file_type: "image/png",
+        file_path: imageUrl,
+        metadata: {
+          type: "realistic_render",
+          layout_type: "realistic_factory_view",
+          generated_at: new Date().toISOString(),
+        },
+      });
+
+    if (saveError) {
+      logger.warn("Failed to save realistic render", { projectId: id, error: saveError });
+    }
+
+    sendEvent("complete", { 
+      imageUrl,
+      message: "Realistic factory render generated successfully!"
+    });
+
+    logger.info("Realistic render generated successfully", { projectId: id });
+  } catch (error: any) {
+    logger.error("Error generating realistic render", error, { projectId: id });
+    sendEvent("error", { message: error.message || "Failed to generate realistic view" });
+  } finally {
+    res.end();
   }
 });
 

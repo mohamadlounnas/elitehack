@@ -316,103 +316,189 @@ class FullReportGenerator {
     const sections: ReportSection[] = [];
     const hasFullPlanningData = data.planningData && Object.keys(data.planningData).length > 2;
 
-    // Always include these core sections
+    // ============================================
+    // PART I: EXECUTIVE OVERVIEW
+    // ============================================
     sections.push({
       id: "executive",
       title: "Executive Summary",
-      subtitle: "Strategic investment overview and key recommendations",
+      subtitle: "Strategic investment overview, key findings, and recommendations",
     });
 
     sections.push({
       id: "identity",
-      title: "Industrial Identity",
-      subtitle: "Factory profile, legal structure, and market positioning",
+      title: "Company Profile & Industrial Identity",
+      subtitle: "Factory profile, legal structure, brand identity, and market positioning",
     });
 
-    // Production & Engineering - include if we have production lines OR assets (equipment implies production)
-    if (data.planningData?.production_lines?.length > 0 || (data.assets.length > 0 && hasFullPlanningData)) {
-      sections.push({
-        id: "production",
-        title: "Production Engineering",
-        subtitle: "Manufacturing lines, processes, and capacity analysis",
-      });
-    }
+    sections.push({
+      id: "market",
+      title: "Market Analysis & Opportunity",
+      subtitle: "Industry overview, competitive landscape, and growth potential",
+    });
 
-    // Factory Layout & Dimensions
-    if (data.planningData?.factory_dimensions) {
-      sections.push({
-        id: "facility",
-        title: "Facility Specifications",
-        subtitle: "Building dimensions, zoning, and infrastructure requirements",
-      });
-    }
+    // ============================================
+    // PART II: TECHNICAL & PRODUCTION
+    // ============================================
+    sections.push({
+      id: "production",
+      title: "Production Engineering & Processes",
+      subtitle: "Manufacturing lines, production workflows, and capacity analysis",
+    });
 
-    // Equipment & Assets - include if we have any assets
+    sections.push({
+      id: "facility",
+      title: "Facility Design & Specifications",
+      subtitle: "Building dimensions, layout, zoning, and infrastructure requirements",
+    });
+
+    // Equipment & Assets - detailed if available
     if (data.assets.length > 0) {
       sections.push({
         id: "equipment",
-        title: "Equipment & Machinery",
-        subtitle: "Complete inventory with specifications and cost estimates",
+        title: "Equipment & Machinery Inventory",
+        subtitle: "Complete equipment list with detailed specifications",
       });
-    }
 
-    // Suppliers - include if we have any
-    if (data.suppliers.length > 0) {
       sections.push({
-        id: "suppliers",
-        title: "Supplier Network",
-        subtitle: "Verified suppliers, certifications, and contact information",
+        id: "equipment_detail",
+        title: "Technical Equipment Specifications",
+        subtitle: "Detailed specifications, capacities, and requirements for each asset",
+      });
+    } else {
+      sections.push({
+        id: "equipment",
+        title: "Equipment & Machinery Requirements",
+        subtitle: "Planned equipment needs and specifications",
       });
     }
 
-    // Financial Analysis - Always include (will show available data or placeholders)
     sections.push({
-      id: "financial",
-      title: "Financial Analysis",
-      subtitle: "Capital expenditure, operating costs, and ROI projections",
+      id: "quality",
+      title: "Quality Assurance & Standards",
+      subtitle: "Quality management systems, certifications, and compliance requirements",
     });
 
-    // Cash Flow Projections - include if we have projection data
-    if (data.tcoAnalysis?.projections?.length > 0 || data.tcoAnalysis?.ten_year_projection?.length > 0) {
+    // ============================================
+    // PART III: SUPPLY CHAIN & PROCUREMENT
+    // ============================================
+    sections.push({
+      id: "suppliers",
+      title: "Supplier Network & Procurement",
+      subtitle: "Verified suppliers, sourcing strategy, and vendor relationships",
+    });
+
+    if (data.suppliers.length > 0) {
       sections.push({
-        id: "projections",
-        title: "Financial Projections",
-        subtitle: "10-year cash flow analysis and break-even forecast",
+        id: "supplier_analysis",
+        title: "Supplier Analysis & Comparison",
+        subtitle: "Detailed supplier evaluation, pricing, and selection criteria",
       });
     }
 
-    // Risk Assessment - include if available
-    if (data.planningData?.risk_assessment || data.tcoAnalysis?.risk_analysis) {
-      sections.push({
-        id: "risk",
-        title: "Risk Assessment",
-        subtitle: "Risk identification, analysis, and mitigation strategies",
-      });
-    }
+    // ============================================
+    // PART IV: FINANCIAL ANALYSIS
+    // ============================================
+    sections.push({
+      id: "financial",
+      title: "Financial Analysis Overview",
+      subtitle: "Investment summary, key financial metrics, and funding requirements",
+    });
 
-    // Digital Transformation - include if available
+    sections.push({
+      id: "capex",
+      title: "Capital Expenditure Breakdown",
+      subtitle: "Detailed CAPEX analysis by category with cost justification",
+    });
+
+    sections.push({
+      id: "opex",
+      title: "Operating Cost Analysis",
+      subtitle: "Annual operating expenses, cost structure, and efficiency metrics",
+    });
+
+    sections.push({
+      id: "projections",
+      title: "10-Year Financial Projections",
+      subtitle: "Revenue forecasts, cash flow analysis, and profitability timeline",
+    });
+
+    sections.push({
+      id: "roi",
+      title: "ROI & Payback Analysis",
+      subtitle: "Return on investment, payback period, and NPV calculations",
+    });
+
+    // ============================================
+    // PART V: RISK & STRATEGY
+    // ============================================
+    sections.push({
+      id: "risk",
+      title: "Risk Assessment & Mitigation",
+      subtitle: "Risk identification, probability analysis, and mitigation strategies",
+    });
+
+    sections.push({
+      id: "sensitivity",
+      title: "Sensitivity Analysis",
+      subtitle: "Financial impact of key variable changes and scenario planning",
+    });
+
+    // Digital Transformation
     if (data.planningData?.digital_transformation) {
       sections.push({
         id: "digital",
-        title: "Digital Transformation",
-        subtitle: "Industry 4.0 integration and smart factory capabilities",
+        title: "Digital Transformation Strategy",
+        subtitle: "Industry 4.0 integration, IoT, and smart factory capabilities",
       });
     }
 
-    // Location & Logistics - include if available
-    if (data.planningData?.location_justification) {
-      sections.push({
-        id: "location",
-        title: "Location & Logistics",
-        subtitle: "Site selection criteria and supply chain optimization",
-      });
-    }
+    sections.push({
+      id: "sustainability",
+      title: "Sustainability & ESG Considerations",
+      subtitle: "Environmental impact, energy efficiency, and ESG compliance",
+    });
 
-    // Appendix - Always include for requirements/conversation
+    // ============================================
+    // PART VI: IMPLEMENTATION
+    // ============================================
+    sections.push({
+      id: "location",
+      title: "Location Analysis & Logistics",
+      subtitle: "Site selection criteria, logistics optimization, and supply chain",
+    });
+
+    sections.push({
+      id: "timeline",
+      title: "Implementation Timeline",
+      subtitle: "Project phases, milestones, and critical path analysis",
+    });
+
+    sections.push({
+      id: "team",
+      title: "Organizational Structure",
+      subtitle: "Management team, workforce requirements, and training needs",
+    });
+
+    // ============================================
+    // APPENDICES
+    // ============================================
     sections.push({
       id: "appendix",
-      title: "Appendix",
-      subtitle: "Project requirements and supporting documentation",
+      title: "Appendix A: Project Requirements",
+      subtitle: "Original project specifications and conversation summary",
+    });
+
+    sections.push({
+      id: "appendix_technical",
+      title: "Appendix B: Technical Documentation",
+      subtitle: "Detailed technical specifications and data sheets",
+    });
+
+    sections.push({
+      id: "appendix_financial",
+      title: "Appendix C: Financial Details",
+      subtitle: "Detailed financial calculations and assumptions",
     });
 
     // Log the planned structure
@@ -829,6 +915,9 @@ class FullReportGenerator {
       case "identity":
         await this.generateIndustrialIdentity(data);
         break;
+      case "market":
+        await this.generateMarketAnalysis(data);
+        break;
       case "production":
         await this.generateProductionSection(data);
         break;
@@ -838,26 +927,62 @@ class FullReportGenerator {
       case "equipment":
         await this.generateEquipmentSection(data);
         break;
+      case "equipment_detail":
+        await this.generateEquipmentDetailSection(data);
+        break;
+      case "quality":
+        await this.generateQualitySection(data);
+        break;
       case "suppliers":
         await this.generateSuppliersSection(data);
+        break;
+      case "supplier_analysis":
+        await this.generateSupplierAnalysis(data);
         break;
       case "financial":
         await this.generateFinancialSection(data);
         break;
+      case "capex":
+        await this.generateCapexSection(data);
+        break;
+      case "opex":
+        await this.generateOpexSection(data);
+        break;
       case "projections":
         await this.generateProjectionsSection(data);
+        break;
+      case "roi":
+        await this.generateRoiSection(data);
         break;
       case "risk":
         await this.generateRiskSection(data);
         break;
+      case "sensitivity":
+        await this.generateSensitivitySection(data);
+        break;
       case "digital":
         await this.generateDigitalSection(data);
+        break;
+      case "sustainability":
+        await this.generateSustainabilitySection(data);
         break;
       case "location":
         await this.generateLocationSection(data);
         break;
+      case "timeline":
+        await this.generateTimelineSection(data);
+        break;
+      case "team":
+        await this.generateTeamSection(data);
+        break;
       case "appendix":
         await this.generateAppendix(data);
+        break;
+      case "appendix_technical":
+        await this.generateTechnicalAppendix(data);
+        break;
+      case "appendix_financial":
+        await this.generateFinancialAppendix(data);
         break;
     }
   }
@@ -2027,11 +2152,1200 @@ class FullReportGenerator {
     });
     
     this.yPosition -= 20;
-    this.currentPage.drawText("End of Report", {
-      x: (this.pageWidth - this.helveticaOblique.widthOfTextAtSize("End of Report", 10)) / 2,
+    this.currentPage.drawText("End of Appendix A", {
+      x: (this.pageWidth - this.helveticaOblique.widthOfTextAtSize("End of Appendix A", 10)) / 2,
       y: this.yPosition,
       size: 10,
       font: this.helveticaOblique,
+      color: COLORS.textLight,
+    });
+  }
+
+  // ============================================
+  // MARKET ANALYSIS
+  // ============================================
+  private async generateMarketAnalysis(data: ReportData): Promise<void> {
+    this.addNewPage();
+    this.yPosition = this.pageHeight - this.margin;
+    
+    const planningData = data.planningData || {};
+    const category = planningData.identity?.category || "Manufacturing";
+
+    this.drawSectionHeader("Industry Overview");
+    this.yPosition -= 25;
+
+    // Market introduction
+    const marketIntro = `The ${category} industry represents a significant segment of the global manufacturing sector. 
+This analysis examines the market dynamics, competitive landscape, and growth opportunities relevant to the proposed facility.`;
+    this.drawWrappedText(marketIntro, 10, COLORS.textMedium);
+    this.yPosition -= 20;
+
+    // Market size & trends
+    this.checkNewPage(120);
+    this.drawSectionHeader("Market Size & Trends");
+    this.yPosition -= 25;
+    
+    const trends = [
+      "Growing demand for automated and smart manufacturing solutions",
+      "Increasing focus on sustainability and green manufacturing practices",
+      "Industry 4.0 adoption driving digital transformation investments",
+      "Supply chain resilience becoming a key competitive advantage",
+      "Rising labor costs driving automation investments",
+    ];
+    
+    for (const trend of trends) {
+      this.checkNewPage(25);
+      this.drawBulletPoint(trend, COLORS.textMedium);
+      this.yPosition -= 20;
+    }
+
+    // Competitive landscape
+    this.yPosition -= 20;
+    this.checkNewPage(100);
+    this.drawSectionHeader("Competitive Landscape");
+    this.yPosition -= 25;
+
+    const competitive = `The market features a mix of established players and emerging competitors. 
+Key success factors include operational efficiency, product quality, customer service, and technological innovation. 
+The proposed facility is designed to compete effectively through modern equipment and optimized processes.`;
+    this.drawWrappedText(competitive, 10, COLORS.textMedium);
+    this.yPosition -= 20;
+
+    // Growth opportunities
+    this.yPosition -= 20;
+    this.checkNewPage(100);
+    this.drawSectionHeader("Growth Opportunities");
+    this.yPosition -= 25;
+
+    const opportunities = [
+      "Expansion into adjacent market segments",
+      "Geographic expansion to underserved regions",
+      "Product innovation and value-added services",
+      "Strategic partnerships and joint ventures",
+      "E-commerce and digital sales channels",
+    ];
+    
+    for (const opp of opportunities) {
+      this.checkNewPage(25);
+      this.drawBulletPoint(opp, COLORS.textMedium);
+      this.yPosition -= 20;
+    }
+
+    // Target market
+    this.yPosition -= 20;
+    this.checkNewPage(100);
+    this.drawSectionHeader("Target Market Segments");
+    this.yPosition -= 25;
+
+    const targetMarket = planningData.target_market || 
+      "Primary focus on domestic B2B customers with potential for export markets. Secondary opportunities in retail and direct-to-consumer channels.";
+    this.drawWrappedText(targetMarket, 10, COLORS.textMedium);
+  }
+
+  // ============================================
+  // QUALITY ASSURANCE
+  // ============================================
+  private async generateQualitySection(data: ReportData): Promise<void> {
+    this.addNewPage();
+    this.yPosition = this.pageHeight - this.margin;
+    
+    this.drawSectionHeader("Quality Management System");
+    this.yPosition -= 25;
+
+    const qmsIntro = `The facility will implement a comprehensive Quality Management System (QMS) aligned with 
+international standards. This system ensures consistent product quality, regulatory compliance, and continuous improvement.`;
+    this.drawWrappedText(qmsIntro, 10, COLORS.textMedium);
+    this.yPosition -= 30;
+
+    // Certifications
+    this.checkNewPage(120);
+    this.drawSectionHeader("Planned Certifications");
+    this.yPosition -= 25;
+
+    const certifications = [
+      ["ISO 9001:2015", "Quality Management System"],
+      ["ISO 14001:2015", "Environmental Management System"],
+      ["ISO 45001:2018", "Occupational Health & Safety"],
+      ["Industry-Specific", "Relevant sector certifications"],
+    ];
+
+    for (const [cert, desc] of certifications) {
+      this.checkNewPage(30);
+      this.drawInfoRow(cert, desc);
+      this.yPosition -= 25;
+    }
+
+    // Quality control processes
+    this.yPosition -= 20;
+    this.checkNewPage(100);
+    this.drawSectionHeader("Quality Control Processes");
+    this.yPosition -= 25;
+
+    const qcProcesses = [
+      "Incoming material inspection and testing",
+      "In-process quality monitoring at each production stage",
+      "Statistical Process Control (SPC) implementation",
+      "Final product inspection and testing",
+      "Non-conformance management and corrective actions",
+      "Supplier quality management program",
+      "Regular internal and external audits",
+    ];
+
+    for (const process of qcProcesses) {
+      this.checkNewPage(25);
+      this.drawBulletPoint(process, COLORS.textMedium);
+      this.yPosition -= 20;
+    }
+
+    // Quality KPIs
+    this.yPosition -= 20;
+    this.checkNewPage(100);
+    this.drawSectionHeader("Quality Key Performance Indicators");
+    this.yPosition -= 25;
+
+    const kpis = [
+      ["First Pass Yield (FPY)", "Target > 98%"],
+      ["Customer Complaint Rate", "Target < 0.1%"],
+      ["Defect Rate", "Target < 50 PPM"],
+      ["On-Time Delivery", "Target > 99%"],
+      ["Supplier Quality Rating", "Target > 95%"],
+    ];
+
+    for (const [kpi, target] of kpis) {
+      this.checkNewPage(30);
+      this.drawInfoRow(kpi, target);
+      this.yPosition -= 25;
+    }
+  }
+
+  // ============================================
+  // EQUIPMENT DETAIL SECTION
+  // ============================================
+  private async generateEquipmentDetailSection(data: ReportData): Promise<void> {
+    const assets = data.assets || [];
+    
+    if (assets.length === 0) {
+      this.addNewPage();
+      this.yPosition = this.pageHeight - this.margin;
+      this.drawWrappedText("Equipment specifications will be documented as procurement progresses.", 10, COLORS.textMedium);
+      return;
+    }
+
+    // Create a detailed page for each major equipment
+    for (let i = 0; i < assets.length; i++) {
+      const asset = assets[i];
+      this.addNewPage();
+      this.yPosition = this.pageHeight - this.margin;
+
+      // Equipment header
+      this.drawSectionHeader(`${i + 1}. ${asset.name || 'Equipment'}`);
+      this.yPosition -= 30;
+
+      // Basic info
+      const specs = asset.specifications || {};
+      
+      this.drawInfoRow("Equipment Type", asset.type || "General");
+      this.yPosition -= 22;
+      this.drawInfoRow("Category", asset.category || asset.type || "Manufacturing");
+      this.yPosition -= 22;
+      
+      if (specs.manufacturer) {
+        this.drawInfoRow("Manufacturer", specs.manufacturer);
+        this.yPosition -= 22;
+      }
+      if (specs.model) {
+        this.drawInfoRow("Model", specs.model);
+        this.yPosition -= 22;
+      }
+
+      // Description
+      if (asset.description) {
+        this.yPosition -= 20;
+        this.checkNewPage(80);
+        this.drawSectionHeader("Description");
+        this.yPosition -= 20;
+        this.drawWrappedText(asset.description, 10, COLORS.textMedium);
+        this.yPosition -= 20;
+      }
+
+      // Technical specifications
+      this.yPosition -= 20;
+      this.checkNewPage(120);
+      this.drawSectionHeader("Technical Specifications");
+      this.yPosition -= 25;
+
+      const techSpecs = [
+        ["Power Requirement", specs.power_kw ? `${specs.power_kw} kW` : "TBD"],
+        ["Dimensions", specs.dimensions || "TBD"],
+        ["Weight", specs.weight_kg ? `${specs.weight_kg} kg` : "TBD"],
+        ["Capacity", specs.capacity || "TBD"],
+        ["Voltage", specs.voltage || "380V / 3-phase (typical)"],
+        ["Operating Temperature", specs.operating_temp || "Standard ambient"],
+      ];
+
+      for (const [label, value] of techSpecs) {
+        this.checkNewPage(25);
+        this.drawInfoRow(label, value);
+        this.yPosition -= 22;
+      }
+
+      // Cost information
+      this.yPosition -= 20;
+      this.checkNewPage(80);
+      this.drawSectionHeader("Cost Information");
+      this.yPosition -= 25;
+
+      const estCost = asset.estimated_cost_usd || specs.estimated_cost_usd || 0;
+      this.drawInfoRow("Estimated Cost", estCost > 0 ? `$${estCost.toLocaleString()}` : "To be quoted");
+      this.yPosition -= 22;
+      this.drawInfoRow("Installation Cost", estCost > 0 ? `$${Math.round(estCost * 0.1).toLocaleString()} (est.)` : "TBD");
+      this.yPosition -= 22;
+      this.drawInfoRow("Annual Maintenance", estCost > 0 ? `$${Math.round(estCost * 0.05).toLocaleString()} (est.)` : "TBD");
+    }
+  }
+
+  // ============================================
+  // SUPPLIER ANALYSIS
+  // ============================================
+  private async generateSupplierAnalysis(data: ReportData): Promise<void> {
+    this.addNewPage();
+    this.yPosition = this.pageHeight - this.margin;
+    
+    const suppliers = data.suppliers || [];
+
+    this.drawSectionHeader("Supplier Evaluation Criteria");
+    this.yPosition -= 25;
+
+    const criteria = [
+      ["Price Competitiveness", "25%", "Comparison of quoted prices"],
+      ["Quality Certification", "20%", "ISO and industry certifications"],
+      ["Delivery Performance", "20%", "Lead times and reliability"],
+      ["Technical Support", "15%", "After-sales service capability"],
+      ["Financial Stability", "10%", "Company financial health"],
+      ["Location/Logistics", "10%", "Geographic proximity and shipping"],
+    ];
+
+    for (const [criterion, weight, desc] of criteria) {
+      this.checkNewPage(35);
+      this.drawInfoRow(`${criterion} (${weight})`, desc);
+      this.yPosition -= 25;
+    }
+
+    // Supplier comparison
+    if (suppliers.length > 0) {
+      this.yPosition -= 30;
+      this.checkNewPage(100);
+      this.drawSectionHeader("Supplier Comparison Matrix");
+      this.yPosition -= 25;
+
+      for (const supplier of suppliers) {
+        this.checkNewPage(80);
+        
+        // Supplier card
+        this.currentPage.drawRectangle({
+          x: this.margin,
+          y: this.yPosition - 60,
+          width: this.contentWidth,
+          height: 65,
+          color: COLORS.bgSubtle,
+          borderColor: COLORS.border,
+          borderWidth: 0.5,
+        });
+
+        this.currentPage.drawText(supplier.name || "Supplier", {
+          x: this.margin + 10,
+          y: this.yPosition - 15,
+          size: 11,
+          font: this.helveticaBold,
+          color: COLORS.navy,
+        });
+
+        this.currentPage.drawText(supplier.location || "Location TBD", {
+          x: this.margin + 10,
+          y: this.yPosition - 32,
+          size: 9,
+          font: this.helvetica,
+          color: COLORS.textMedium,
+        });
+
+        const rating = supplier.rating || "Pending Evaluation";
+        this.currentPage.drawText(`Rating: ${rating}`, {
+          x: this.margin + 10,
+          y: this.yPosition - 48,
+          size: 9,
+          font: this.helvetica,
+          color: COLORS.textMedium,
+        });
+
+        this.yPosition -= 75;
+      }
+    }
+
+    // Procurement strategy
+    this.yPosition -= 20;
+    this.checkNewPage(100);
+    this.drawSectionHeader("Procurement Strategy");
+    this.yPosition -= 25;
+
+    const strategy = [
+      "Maintain multiple qualified suppliers for critical equipment",
+      "Negotiate framework agreements for volume discounts",
+      "Implement supplier performance monitoring system",
+      "Develop strategic partnerships with key suppliers",
+      "Establish clear SLAs and quality requirements",
+    ];
+
+    for (const item of strategy) {
+      this.checkNewPage(25);
+      this.drawBulletPoint(item, COLORS.textMedium);
+      this.yPosition -= 20;
+    }
+  }
+
+  // ============================================
+  // CAPEX SECTION
+  // ============================================
+  private async generateCapexSection(data: ReportData): Promise<void> {
+    this.addNewPage();
+    this.yPosition = this.pageHeight - this.margin;
+    
+    const analysis = data.tcoAnalysis || {};
+    const initialInv = analysis.initial_investment || {};
+    const assets = data.assets || [];
+
+    this.drawSectionHeader("Capital Expenditure Summary");
+    this.yPosition -= 25;
+
+    // Calculate totals
+    const equipmentCost = assets.reduce((sum, a) => sum + (a.estimated_cost_usd || a.specifications?.estimated_cost_usd || 0), 0);
+    const buildingCost = initialInv.building || equipmentCost * 0.5;
+    const installationCost = initialInv.installation || equipmentCost * 0.1;
+    const workingCapital = initialInv.working_capital || equipmentCost * 0.15;
+    const contingency = initialInv.contingency || equipmentCost * 0.1;
+    const totalCapex = initialInv.total || (equipmentCost + buildingCost + installationCost + workingCapital + contingency);
+
+    const capexItems = [
+      ["Equipment & Machinery", equipmentCost],
+      ["Building & Civil Works", buildingCost],
+      ["Installation & Commissioning", installationCost],
+      ["Working Capital", workingCapital],
+      ["Contingency Reserve", contingency],
+    ];
+
+    for (const [label, value] of capexItems) {
+      this.checkNewPage(30);
+      this.drawInfoRow(label, this.formatCurrency(value));
+      this.yPosition -= 25;
+    }
+
+    // Total with highlight
+    this.yPosition -= 10;
+    this.currentPage.drawRectangle({
+      x: this.margin,
+      y: this.yPosition - 25,
+      width: this.contentWidth,
+      height: 30,
+      color: COLORS.accent,
+    });
+
+    this.currentPage.drawText("TOTAL CAPITAL EXPENDITURE", {
+      x: this.margin + 10,
+      y: this.yPosition - 15,
+      size: 10,
+      font: this.helveticaBold,
+      color: COLORS.white,
+    });
+
+    this.currentPage.drawText(this.formatCurrency(totalCapex), {
+      x: this.pageWidth - this.margin - 100,
+      y: this.yPosition - 15,
+      size: 12,
+      font: this.courier,
+      color: COLORS.white,
+    });
+
+    this.yPosition -= 50;
+
+    // Equipment breakdown by category
+    this.checkNewPage(100);
+    this.drawSectionHeader("Equipment CAPEX by Category");
+    this.yPosition -= 25;
+
+    // Group assets by type
+    const byType: Record<string, number> = {};
+    for (const asset of assets) {
+      const type = asset.type || "Other";
+      const cost = asset.estimated_cost_usd || asset.specifications?.estimated_cost_usd || 0;
+      byType[type] = (byType[type] || 0) + cost;
+    }
+
+    for (const [type, cost] of Object.entries(byType)) {
+      this.checkNewPage(25);
+      const pct = totalCapex > 0 ? ((cost / totalCapex) * 100).toFixed(1) : "0";
+      this.drawInfoRow(`${type} (${pct}%)`, this.formatCurrency(cost));
+      this.yPosition -= 22;
+    }
+
+    // Funding structure
+    this.yPosition -= 30;
+    this.checkNewPage(100);
+    this.drawSectionHeader("Recommended Funding Structure");
+    this.yPosition -= 25;
+
+    const equity = totalCapex * 0.4;
+    const debt = totalCapex * 0.6;
+
+    this.drawInfoRow("Equity Contribution (40%)", this.formatCurrency(equity));
+    this.yPosition -= 22;
+    this.drawInfoRow("Debt Financing (60%)", this.formatCurrency(debt));
+    this.yPosition -= 22;
+    this.drawInfoRow("Assumed Interest Rate", "6-8% p.a.");
+    this.yPosition -= 22;
+    this.drawInfoRow("Loan Tenure", "7-10 years");
+  }
+
+  // ============================================
+  // OPEX SECTION
+  // ============================================
+  private async generateOpexSection(data: ReportData): Promise<void> {
+    this.addNewPage();
+    this.yPosition = this.pageHeight - this.margin;
+    
+    const analysis = data.tcoAnalysis || {};
+    const annualOps = analysis.annual_operational || {};
+
+    this.drawSectionHeader("Annual Operating Cost Structure");
+    this.yPosition -= 25;
+
+    const labor = annualOps.labor || 500000;
+    const utilities = annualOps.utilities || 120000;
+    const maintenance = annualOps.maintenance || 80000;
+    const rawMaterials = annualOps.raw_materials || 800000;
+    const insurance = annualOps.insurance || 50000;
+    const other = annualOps.other || 100000;
+    const totalOpex = annualOps.total || (labor + utilities + maintenance + rawMaterials + insurance + other);
+
+    const opexItems = [
+      ["Raw Materials & Supplies", rawMaterials],
+      ["Labor & Personnel", labor],
+      ["Utilities (Power, Water, Gas)", utilities],
+      ["Maintenance & Repairs", maintenance],
+      ["Insurance & Compliance", insurance],
+      ["Administrative & Other", other],
+    ];
+
+    for (const [label, value] of opexItems) {
+      this.checkNewPage(30);
+      const pct = totalOpex > 0 ? ((value / totalOpex) * 100).toFixed(1) : "0";
+      this.drawInfoRow(`${label} (${pct}%)`, this.formatCurrency(value));
+      this.yPosition -= 25;
+    }
+
+    // Total
+    this.yPosition -= 10;
+    this.currentPage.drawRectangle({
+      x: this.margin,
+      y: this.yPosition - 25,
+      width: this.contentWidth,
+      height: 30,
+      color: COLORS.navyLight,
+    });
+
+    this.currentPage.drawText("TOTAL ANNUAL OPEX", {
+      x: this.margin + 10,
+      y: this.yPosition - 15,
+      size: 10,
+      font: this.helveticaBold,
+      color: COLORS.white,
+    });
+
+    this.currentPage.drawText(this.formatCurrency(totalOpex), {
+      x: this.pageWidth - this.margin - 100,
+      y: this.yPosition - 15,
+      size: 12,
+      font: this.courier,
+      color: COLORS.white,
+    });
+
+    this.yPosition -= 50;
+
+    // Monthly breakdown
+    this.checkNewPage(100);
+    this.drawSectionHeader("Monthly Operating Budget");
+    this.yPosition -= 25;
+
+    this.drawInfoRow("Monthly Fixed Costs", this.formatCurrency((labor + insurance + other) / 12));
+    this.yPosition -= 22;
+    this.drawInfoRow("Monthly Variable Costs", this.formatCurrency((rawMaterials + utilities + maintenance) / 12));
+    this.yPosition -= 22;
+    this.drawInfoRow("Monthly Total", this.formatCurrency(totalOpex / 12));
+    this.yPosition -= 30;
+
+    // Cost optimization opportunities
+    this.checkNewPage(100);
+    this.drawSectionHeader("Cost Optimization Opportunities");
+    this.yPosition -= 25;
+
+    const optimizations = [
+      "Energy efficiency improvements through LED lighting and smart controls",
+      "Preventive maintenance program to reduce downtime and repair costs",
+      "Bulk purchasing and inventory optimization for raw materials",
+      "Process automation to improve labor productivity",
+      "Waste reduction and recycling programs",
+    ];
+
+    for (const opt of optimizations) {
+      this.checkNewPage(25);
+      this.drawBulletPoint(opt, COLORS.textMedium);
+      this.yPosition -= 20;
+    }
+  }
+
+  // ============================================
+  // ROI SECTION
+  // ============================================
+  private async generateRoiSection(data: ReportData): Promise<void> {
+    this.addNewPage();
+    this.yPosition = this.pageHeight - this.margin;
+    
+    const analysis = data.tcoAnalysis || {};
+    const metrics = analysis.financial_metrics || {};
+    const initialInv = analysis.initial_investment || {};
+
+    this.drawSectionHeader("Investment Return Analysis");
+    this.yPosition -= 25;
+
+    // Key metrics
+    const roi = metrics.roi || 18;
+    const irr = metrics.irr || 22;
+    const payback = metrics.payback_period || 4.5;
+    const npv = metrics.npv || initialInv.total * 0.8 || 1000000;
+
+    const metricsData = [
+      ["Return on Investment (ROI)", `${roi}%`],
+      ["Internal Rate of Return (IRR)", `${irr}%`],
+      ["Payback Period", `${payback} years`],
+      ["Net Present Value (NPV)", this.formatCurrency(npv)],
+    ];
+
+    for (const [label, value] of metricsData) {
+      this.checkNewPage(40);
+      
+      // Metric box
+      this.currentPage.drawRectangle({
+        x: this.margin,
+        y: this.yPosition - 30,
+        width: this.contentWidth,
+        height: 35,
+        color: COLORS.bgSubtle,
+        borderColor: COLORS.border,
+        borderWidth: 0.5,
+      });
+
+      this.currentPage.drawText(label, {
+        x: this.margin + 10,
+        y: this.yPosition - 18,
+        size: 10,
+        font: this.helvetica,
+        color: COLORS.textMedium,
+      });
+
+      this.currentPage.drawText(value, {
+        x: this.pageWidth - this.margin - 80,
+        y: this.yPosition - 18,
+        size: 12,
+        font: this.helveticaBold,
+        color: COLORS.accent,
+      });
+
+      this.yPosition -= 45;
+    }
+
+    // Break-even analysis
+    this.yPosition -= 20;
+    this.checkNewPage(100);
+    this.drawSectionHeader("Break-Even Analysis");
+    this.yPosition -= 25;
+
+    const breakEvenAnalysis = `Based on projected revenue and cost structure, the facility is expected to reach break-even 
+at approximately ${Math.round(payback * 12)} months of operation. This analysis assumes stable market conditions 
+and achievement of projected capacity utilization rates.`;
+    this.drawWrappedText(breakEvenAnalysis, 10, COLORS.textMedium);
+    this.yPosition -= 30;
+
+    // Investment recommendation
+    this.checkNewPage(100);
+    this.drawSectionHeader("Investment Recommendation");
+    this.yPosition -= 25;
+
+    const isPositive = roi >= 15 && payback <= 6;
+    const recommendation = isPositive 
+      ? "Based on the financial analysis, this investment demonstrates strong potential returns with acceptable risk levels. Recommend proceeding with the project."
+      : "The investment shows moderate returns. Consider optimizing the cost structure or phasing the investment to improve financial metrics.";
+    
+    this.currentPage.drawRectangle({
+      x: this.margin,
+      y: this.yPosition - 50,
+      width: this.contentWidth,
+      height: 55,
+      color: isPositive ? rgb(0.92, 0.97, 0.95) : rgb(0.98, 0.95, 0.92),
+      borderColor: isPositive ? COLORS.success : COLORS.warning,
+      borderWidth: 1,
+    });
+
+    this.currentPage.drawText(isPositive ? "RECOMMENDED" : "CONDITIONAL", {
+      x: this.margin + 10,
+      y: this.yPosition - 18,
+      size: 10,
+      font: this.helveticaBold,
+      color: isPositive ? COLORS.success : COLORS.warning,
+    });
+
+    this.currentPage.drawText(recommendation, {
+      x: this.margin + 10,
+      y: this.yPosition - 38,
+      size: 9,
+      font: this.helvetica,
+      color: COLORS.textMedium,
+    });
+  }
+
+  // ============================================
+  // SENSITIVITY ANALYSIS
+  // ============================================
+  private async generateSensitivitySection(data: ReportData): Promise<void> {
+    this.addNewPage();
+    this.yPosition = this.pageHeight - this.margin;
+    
+    const analysis = data.tcoAnalysis || {};
+    const metrics = analysis.financial_metrics || {};
+    const baseRoi = metrics.roi || 18;
+
+    this.drawSectionHeader("Sensitivity Analysis Overview");
+    this.yPosition -= 25;
+
+    const intro = `This section examines how changes in key variables affect project profitability. 
+Understanding these sensitivities helps in risk management and strategic planning.`;
+    this.drawWrappedText(intro, 10, COLORS.textMedium);
+    this.yPosition -= 30;
+
+    // Variable impact table
+    this.checkNewPage(150);
+    this.drawSectionHeader("Variable Impact on ROI");
+    this.yPosition -= 25;
+
+    const scenarios = [
+      ["Revenue +10%", `ROI: ${(baseRoi * 1.25).toFixed(1)}%`, "+25% impact"],
+      ["Revenue -10%", `ROI: ${(baseRoi * 0.75).toFixed(1)}%`, "-25% impact"],
+      ["OPEX +10%", `ROI: ${(baseRoi * 0.85).toFixed(1)}%`, "-15% impact"],
+      ["OPEX -10%", `ROI: ${(baseRoi * 1.15).toFixed(1)}%`, "+15% impact"],
+      ["CAPEX +10%", `ROI: ${(baseRoi * 0.9).toFixed(1)}%`, "-10% impact"],
+      ["CAPEX -10%", `ROI: ${(baseRoi * 1.1).toFixed(1)}%`, "+10% impact"],
+    ];
+
+    for (const [scenario, result, impact] of scenarios) {
+      this.checkNewPage(30);
+      this.currentPage.drawText(scenario, {
+        x: this.margin,
+        y: this.yPosition,
+        size: 10,
+        font: this.helvetica,
+        color: COLORS.textMedium,
+      });
+      this.currentPage.drawText(result, {
+        x: this.margin + 150,
+        y: this.yPosition,
+        size: 10,
+        font: this.courier,
+        color: COLORS.textDark,
+      });
+      this.currentPage.drawText(impact, {
+        x: this.margin + 300,
+        y: this.yPosition,
+        size: 10,
+        font: this.helvetica,
+        color: impact.includes("+") ? COLORS.success : COLORS.danger,
+      });
+      this.yPosition -= 25;
+    }
+
+    // Key insights
+    this.yPosition -= 30;
+    this.checkNewPage(100);
+    this.drawSectionHeader("Key Insights");
+    this.yPosition -= 25;
+
+    const insights = [
+      "Revenue is the most sensitive variable - focus on sales and pricing strategy",
+      "Operating costs have moderate impact - maintain cost control discipline",
+      "Capital costs are least sensitive due to one-time nature",
+      "Capacity utilization is critical for achieving projected returns",
+    ];
+
+    for (const insight of insights) {
+      this.checkNewPage(25);
+      this.drawBulletPoint(insight, COLORS.textMedium);
+      this.yPosition -= 20;
+    }
+  }
+
+  // ============================================
+  // SUSTAINABILITY SECTION
+  // ============================================
+  private async generateSustainabilitySection(data: ReportData): Promise<void> {
+    this.addNewPage();
+    this.yPosition = this.pageHeight - this.margin;
+    
+    this.drawSectionHeader("Environmental Sustainability");
+    this.yPosition -= 25;
+
+    const envIntro = `The facility will implement sustainable practices to minimize environmental impact 
+and comply with regulatory requirements. These initiatives also contribute to operational cost savings.`;
+    this.drawWrappedText(envIntro, 10, COLORS.textMedium);
+    this.yPosition -= 30;
+
+    // Environmental initiatives
+    this.checkNewPage(100);
+    this.drawSectionHeader("Environmental Initiatives");
+    this.yPosition -= 25;
+
+    const envInitiatives = [
+      "Energy-efficient equipment and LED lighting systems",
+      "Solar panel installation for supplementary power",
+      "Water recycling and treatment systems",
+      "Waste segregation and recycling program",
+      "Low-emission equipment and processes",
+      "Green building design principles",
+    ];
+
+    for (const init of envInitiatives) {
+      this.checkNewPage(25);
+      this.drawBulletPoint(init, COLORS.textMedium);
+      this.yPosition -= 20;
+    }
+
+    // Social responsibility
+    this.yPosition -= 30;
+    this.checkNewPage(100);
+    this.drawSectionHeader("Social Responsibility");
+    this.yPosition -= 25;
+
+    const socialItems = [
+      "Fair employment practices and competitive wages",
+      "Employee training and development programs",
+      "Safe working conditions exceeding regulatory requirements",
+      "Community engagement and local hiring preferences",
+      "Support for local suppliers and businesses",
+    ];
+
+    for (const item of socialItems) {
+      this.checkNewPage(25);
+      this.drawBulletPoint(item, COLORS.textMedium);
+      this.yPosition -= 20;
+    }
+
+    // Governance
+    this.yPosition -= 30;
+    this.checkNewPage(100);
+    this.drawSectionHeader("Corporate Governance");
+    this.yPosition -= 25;
+
+    const govItems = [
+      "Transparent financial reporting and auditing",
+      "Ethics and compliance program",
+      "Board oversight and accountability",
+      "Stakeholder communication policies",
+      "Anti-corruption and anti-bribery policies",
+    ];
+
+    for (const item of govItems) {
+      this.checkNewPage(25);
+      this.drawBulletPoint(item, COLORS.textMedium);
+      this.yPosition -= 20;
+    }
+  }
+
+  // ============================================
+  // TIMELINE SECTION
+  // ============================================
+  private async generateTimelineSection(data: ReportData): Promise<void> {
+    this.addNewPage();
+    this.yPosition = this.pageHeight - this.margin;
+    
+    this.drawSectionHeader("Project Implementation Timeline");
+    this.yPosition -= 25;
+
+    const intro = `The following timeline outlines the key phases and milestones for project implementation. 
+Total estimated project duration: 18-24 months from approval to full production.`;
+    this.drawWrappedText(intro, 10, COLORS.textMedium);
+    this.yPosition -= 30;
+
+    // Phases
+    const phases = [
+      {
+        name: "Phase 1: Planning & Approvals",
+        duration: "Months 1-3",
+        activities: ["Detailed engineering design", "Permit applications", "Financing arrangements", "Supplier negotiations"],
+      },
+      {
+        name: "Phase 2: Construction",
+        duration: "Months 4-12",
+        activities: ["Site preparation", "Building construction", "Utility connections", "Equipment installation"],
+      },
+      {
+        name: "Phase 3: Commissioning",
+        duration: "Months 13-15",
+        activities: ["Equipment testing", "Trial production", "Quality validation", "Staff training"],
+      },
+      {
+        name: "Phase 4: Ramp-Up",
+        duration: "Months 16-24",
+        activities: ["Production ramp-up", "Process optimization", "Full capacity achievement", "Continuous improvement"],
+      },
+    ];
+
+    for (const phase of phases) {
+      this.checkNewPage(120);
+      
+      // Phase header
+      this.currentPage.drawRectangle({
+        x: this.margin,
+        y: this.yPosition - 25,
+        width: this.contentWidth,
+        height: 28,
+        color: COLORS.navyLight,
+      });
+
+      this.currentPage.drawText(phase.name, {
+        x: this.margin + 10,
+        y: this.yPosition - 15,
+        size: 10,
+        font: this.helveticaBold,
+        color: COLORS.white,
+      });
+
+      this.currentPage.drawText(phase.duration, {
+        x: this.pageWidth - this.margin - 80,
+        y: this.yPosition - 15,
+        size: 10,
+        font: this.helvetica,
+        color: COLORS.white,
+      });
+
+      this.yPosition -= 35;
+
+      // Activities
+      for (const activity of phase.activities) {
+        this.checkNewPage(25);
+        this.drawBulletPoint(activity, COLORS.textMedium);
+        this.yPosition -= 18;
+      }
+
+      this.yPosition -= 15;
+    }
+
+    // Critical milestones
+    this.yPosition -= 20;
+    this.checkNewPage(100);
+    this.drawSectionHeader("Critical Milestones");
+    this.yPosition -= 25;
+
+    const milestones = [
+      ["Financial Close", "Month 2"],
+      ["Ground Breaking", "Month 4"],
+      ["Building Complete", "Month 10"],
+      ["Equipment Installation", "Month 12"],
+      ["First Production", "Month 14"],
+      ["Full Capacity", "Month 24"],
+    ];
+
+    for (const [milestone, timing] of milestones) {
+      this.checkNewPage(25);
+      this.drawInfoRow(milestone, timing);
+      this.yPosition -= 22;
+    }
+  }
+
+  // ============================================
+  // TEAM SECTION
+  // ============================================
+  private async generateTeamSection(data: ReportData): Promise<void> {
+    this.addNewPage();
+    this.yPosition = this.pageHeight - this.margin;
+    
+    const planningData = data.planningData || {};
+
+    this.drawSectionHeader("Organizational Structure");
+    this.yPosition -= 25;
+
+    const intro = `The facility will require a skilled workforce to operate efficiently. 
+The organizational structure is designed to support operational excellence and continuous improvement.`;
+    this.drawWrappedText(intro, 10, COLORS.textMedium);
+    this.yPosition -= 30;
+
+    // Key positions
+    this.checkNewPage(150);
+    this.drawSectionHeader("Key Management Positions");
+    this.yPosition -= 25;
+
+    const positions = [
+      ["Plant Manager", "Overall operations management"],
+      ["Production Manager", "Manufacturing oversight"],
+      ["Quality Manager", "QA/QC and compliance"],
+      ["Maintenance Manager", "Equipment and facilities"],
+      ["Finance Controller", "Financial operations"],
+      ["HR Manager", "Human resources"],
+    ];
+
+    for (const [title, resp] of positions) {
+      this.checkNewPage(30);
+      this.drawInfoRow(title, resp);
+      this.yPosition -= 25;
+    }
+
+    // Workforce breakdown
+    this.yPosition -= 30;
+    this.checkNewPage(120);
+    this.drawSectionHeader("Workforce Requirements");
+    this.yPosition -= 25;
+
+    const workforce = planningData.workforce || {};
+    const employees = workforce.total_employees || 50;
+    const directLabor = Math.round(employees * 0.6);
+    const indirect = Math.round(employees * 0.25);
+    const management = Math.round(employees * 0.15);
+
+    this.drawInfoRow("Direct Labor (Production)", `${directLabor} employees`);
+    this.yPosition -= 22;
+    this.drawInfoRow("Indirect Labor (Support)", `${indirect} employees`);
+    this.yPosition -= 22;
+    this.drawInfoRow("Management & Admin", `${management} employees`);
+    this.yPosition -= 22;
+    this.drawInfoRow("Total Workforce", `${employees} employees`);
+    this.yPosition -= 30;
+
+    // Training
+    this.checkNewPage(100);
+    this.drawSectionHeader("Training & Development");
+    this.yPosition -= 25;
+
+    const training = [
+      "Comprehensive onboarding program for all new hires",
+      "Technical skills training for production staff",
+      "Quality management and ISO awareness training",
+      "Safety and emergency response training",
+      "Continuous improvement and lean manufacturing",
+      "Leadership development for supervisors",
+    ];
+
+    for (const item of training) {
+      this.checkNewPage(25);
+      this.drawBulletPoint(item, COLORS.textMedium);
+      this.yPosition -= 20;
+    }
+  }
+
+  // ============================================
+  // TECHNICAL APPENDIX
+  // ============================================
+  private async generateTechnicalAppendix(data: ReportData): Promise<void> {
+    this.addNewPage();
+    this.yPosition = this.pageHeight - this.margin;
+    
+    const assets = data.assets || [];
+    const planningData = data.planningData || {};
+
+    this.drawSectionHeader("Technical Reference Data");
+    this.yPosition -= 25;
+
+    // Equipment summary table
+    this.checkNewPage(100);
+    this.drawSectionHeader("Equipment Summary Table");
+    this.yPosition -= 25;
+
+    // Table header
+    this.currentPage.drawRectangle({
+      x: this.margin,
+      y: this.yPosition - 20,
+      width: this.contentWidth,
+      height: 22,
+      color: COLORS.navyLight,
+    });
+
+    const headers = ["Equipment", "Type", "Power (kW)", "Est. Cost"];
+    const colWidths = [180, 100, 80, 100];
+    let xPos = this.margin + 5;
+
+    for (let i = 0; i < headers.length; i++) {
+      this.currentPage.drawText(headers[i], {
+        x: xPos,
+        y: this.yPosition - 14,
+        size: 8,
+        font: this.helveticaBold,
+        color: COLORS.white,
+      });
+      xPos += colWidths[i];
+    }
+    this.yPosition -= 28;
+
+    // Table rows
+    for (const asset of assets.slice(0, 20)) { // Limit to 20 for space
+      this.checkNewPage(22);
+      
+      xPos = this.margin + 5;
+      const specs = asset.specifications || {};
+      const values = [
+        this.truncateText(asset.name || "Equipment", 170),
+        asset.type || "General",
+        specs.power_kw ? `${specs.power_kw}` : "-",
+        asset.estimated_cost_usd ? `$${(asset.estimated_cost_usd / 1000).toFixed(0)}K` : "-",
+      ];
+
+      for (let i = 0; i < values.length; i++) {
+        this.currentPage.drawText(values[i], {
+          x: xPos,
+          y: this.yPosition,
+          size: 8,
+          font: this.helvetica,
+          color: COLORS.textMedium,
+        });
+        xPos += colWidths[i];
+      }
+      this.yPosition -= 18;
+    }
+
+    if (assets.length > 20) {
+      this.yPosition -= 10;
+      this.currentPage.drawText(`... and ${assets.length - 20} more items (see Equipment Detail section)`, {
+        x: this.margin,
+        y: this.yPosition,
+        size: 8,
+        font: this.helveticaOblique,
+        color: COLORS.textLight,
+      });
+    }
+
+    // Factory dimensions
+    this.yPosition -= 40;
+    this.checkNewPage(100);
+    this.drawSectionHeader("Factory Dimensions & Layout");
+    this.yPosition -= 25;
+
+    const dims = planningData.factory_dimensions || {};
+    
+    this.drawInfoRow("Total Area", `${dims.total_area || dims.width * dims.length || 5000} sqm`);
+    this.yPosition -= 22;
+    this.drawInfoRow("Building Footprint", `${dims.width || 50}m x ${dims.length || 100}m`);
+    this.yPosition -= 22;
+    this.drawInfoRow("Ceiling Height", `${dims.height || 8}m`);
+    this.yPosition -= 22;
+    this.drawInfoRow("Number of Floors", `${dims.floors || 1}`);
+  }
+
+  // ============================================
+  // FINANCIAL APPENDIX
+  // ============================================
+  private async generateFinancialAppendix(data: ReportData): Promise<void> {
+    this.addNewPage();
+    this.yPosition = this.pageHeight - this.margin;
+    
+    const analysis = data.tcoAnalysis || {};
+
+    this.drawSectionHeader("Financial Calculation Details");
+    this.yPosition -= 25;
+
+    // Assumptions
+    this.checkNewPage(100);
+    this.drawSectionHeader("Key Financial Assumptions");
+    this.yPosition -= 25;
+
+    const assumptions = [
+      ["Inflation Rate", "3% per annum"],
+      ["Discount Rate", "10% for NPV calculations"],
+      ["Tax Rate", "25% corporate tax"],
+      ["Depreciation Method", "Straight-line over useful life"],
+      ["Equipment Useful Life", "10-15 years average"],
+      ["Working Capital", "15% of annual revenue"],
+      ["Capacity Utilization Year 1", "60%"],
+      ["Capacity Utilization Year 3+", "85%"],
+    ];
+
+    for (const [assumption, value] of assumptions) {
+      this.checkNewPage(25);
+      this.drawInfoRow(assumption, value);
+      this.yPosition -= 22;
+    }
+
+    // 10-year projection detail
+    this.yPosition -= 30;
+    this.checkNewPage(200);
+    this.drawSectionHeader("10-Year Cash Flow Projection");
+    this.yPosition -= 25;
+
+    const projections = analysis.ten_year_projection || analysis.projections || [];
+    
+    if (projections.length > 0) {
+      // Simple projection table
+      for (let i = 0; i < Math.min(projections.length, 10); i++) {
+        const proj = projections[i];
+        this.checkNewPage(25);
+        
+        const revenue = proj.revenue || proj.annual_revenue || 0;
+        const costs = proj.costs || proj.operating_costs || 0;
+        const profit = proj.profit || proj.net_profit || (revenue - costs);
+        
+        this.currentPage.drawText(`Year ${i + 1}:`, {
+          x: this.margin,
+          y: this.yPosition,
+          size: 9,
+          font: this.helveticaBold,
+          color: COLORS.textMedium,
+        });
+        
+        this.currentPage.drawText(`Revenue: ${this.formatCurrency(revenue)}  |  Costs: ${this.formatCurrency(costs)}  |  Profit: ${this.formatCurrency(profit)}`, {
+          x: this.margin + 60,
+          y: this.yPosition,
+          size: 9,
+          font: this.courier,
+          color: profit >= 0 ? COLORS.success : COLORS.danger,
+        });
+        
+        this.yPosition -= 22;
+      }
+    } else {
+      this.drawWrappedText("Detailed projections will be generated after complete financial analysis.", 10, COLORS.textMedium);
+    }
+
+    // End of report
+    this.yPosition -= 50;
+    this.checkNewPage(50);
+    this.currentPage.drawLine({
+      start: { x: this.margin, y: this.yPosition },
+      end: { x: this.pageWidth - this.margin, y: this.yPosition },
+      thickness: 1,
+      color: COLORS.accent,
+    });
+    
+    this.yPosition -= 30;
+    this.currentPage.drawText("END OF REPORT", {
+      x: (this.pageWidth - this.helveticaBold.widthOfTextAtSize("END OF REPORT", 12)) / 2,
+      y: this.yPosition,
+      size: 12,
+      font: this.helveticaBold,
+      color: COLORS.navy,
+    });
+
+    this.yPosition -= 20;
+    const generatedDate = new Date().toLocaleDateString("en-US", {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    });
+    this.currentPage.drawText(`Generated: ${generatedDate}`, {
+      x: (this.pageWidth - this.helvetica.widthOfTextAtSize(`Generated: ${generatedDate}`, 9)) / 2,
+      y: this.yPosition,
+      size: 9,
+      font: this.helvetica,
       color: COLORS.textLight,
     });
   }
@@ -2188,6 +3502,14 @@ class FullReportGenerator {
     
     // Replace common problematic Unicode characters with ASCII equivalents
     return text
+      // First, remove control characters (0x00-0x1F except tab, newline)
+      // \r (0x0D) and other control chars are NOT supported by WinAnsi
+      .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, "") // Remove most control chars
+      .replace(/\r\n/g, " ")  // Windows line endings to space
+      .replace(/\r/g, " ")    // Mac line endings to space
+      .replace(/\n/g, " ")    // Unix line endings to space
+      .replace(/\t/g, "  ")   // Tab to spaces
+      // Unicode replacements
       .replace(/→/g, ">>")
       .replace(/←/g, "<<")
       .replace(/↑/g, "^")
@@ -2216,8 +3538,8 @@ class FullReportGenerator {
       .replace(/€/g, "EUR")
       .replace(/£/g, "GBP")
       .replace(/¥/g, "JPY")
-      // Remove any remaining non-ASCII characters
-      .replace(/[^\x00-\x7F]/g, "");
+      // Remove any remaining non-printable or non-ASCII characters
+      .replace(/[^\x20-\x7E]/g, "");
   }
 
   private truncateText(text: string, maxWidth: number): string {

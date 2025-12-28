@@ -1,5 +1,5 @@
 import axios from "axios";
-import type { Project, ProjectMessage, Asset } from "../types";
+import type { Project, ProjectMessage, Asset, VideoProject } from "../types";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:3001/api";
 
@@ -125,6 +125,40 @@ export const dataApi = {
 
   getFullReportDownloadUrl: (projectId: string) => {
     return `${API_BASE_URL}/projects/${projectId}/full-report-pdf`;
+  },
+};
+
+export const videoApi = {
+  getVideos: async (projectId: string): Promise<VideoProject[]> => {
+    const { data } = await api.get<VideoProject[]>(`/projects/${projectId}/videos`);
+    return data;
+  },
+
+  getVideo: async (projectId: string, videoId: string): Promise<VideoProject> => {
+    const { data } = await api.get<VideoProject>(`/projects/${projectId}/videos/${videoId}`);
+    return data;
+  },
+
+  createVideo: async (projectId: string, title?: string, prompt?: string): Promise<VideoProject> => {
+    const { data } = await api.post<VideoProject>(`/projects/${projectId}/videos`, { title, prompt });
+    return data;
+  },
+
+  updateVideo: async (projectId: string, videoId: string, updates: Partial<VideoProject>): Promise<VideoProject> => {
+    const { data } = await api.patch<VideoProject>(`/projects/${projectId}/videos/${videoId}`, updates);
+    return data;
+  },
+
+  deleteVideo: async (projectId: string, videoId: string): Promise<void> => {
+    await api.delete(`/projects/${projectId}/videos/${videoId}`);
+  },
+
+  getGenerateFramesStreamUrl: (projectId: string, videoId: string, frameType: "first" | "last" | "both" = "both") => {
+    return `${API_BASE_URL}/projects/${projectId}/videos/${videoId}/generate-frames/stream?frame=${frameType}`;
+  },
+
+  getGenerateVideoStreamUrl: (projectId: string, videoId: string) => {
+    return `${API_BASE_URL}/projects/${projectId}/videos/${videoId}/generate-video/stream`;
   },
 };
 
