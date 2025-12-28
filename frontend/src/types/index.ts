@@ -1,18 +1,32 @@
 export type ProjectStep =
   | "chat"
   | "planning"
-  | "planed"
+  | "identityGenerating"
+  | "assetSelection"
   | "assetsImagesGenerating"
-  | "assetsImagesGenerated"
   | "sourcing"
-  | "sourced"
   | "negotiating"
-  | "negotiated"
   | "cost_analysing"
-  | "cost_analysed"
   | "layoutGenerating"
-  | "layoutGenerated"
   | "completed";
+
+export interface BrandIdentity {
+  logo_svg?: string;
+  logo_concept?: string;
+  color_palette?: {
+    primary: string;
+    secondary: string;
+    accent?: string;
+    background?: string;
+    text?: string;
+  };
+  typography?: {
+    heading_font?: string;
+    body_font?: string;
+  };
+  brand_values?: string[];
+  tagline?: string;
+}
 
 export interface Project {
   id: string;
@@ -22,6 +36,11 @@ export interface Project {
   current_step: ProjectStep;
   cost_analysis_pdf?: string;
   business_plan_excel?: string;
+  full_report_pdf_url?: string;
+  logo_url?: string;
+  primary_color?: string;
+  secondary_color?: string;
+  brand_identity?: BrandIdentity;
   planning_data?: PlanningData;
   created_at: string;
   updated_at: string;
@@ -86,6 +105,7 @@ export interface Asset {
   supplier_id?: string;
   image_url?: string;
   image_generated: boolean;
+  selected_for_processing?: boolean;
   specifications?: Record<string, any>;
   created_at: string;
 }
@@ -97,17 +117,34 @@ export interface Supplier {
   email?: string;
   phone?: string;
   location?: string;
+  country?: string;
+  address?: string;
+  contact_person?: string;
   rating?: number;
-  products?: any;
-  asset_suppliers?: Array<{
-    asset_id: string;
-    assets?: {
-      id: string;
-      name: string;
-    };
-  }>;
+  products?: string[];
+  specializations?: string[];
+  certifications?: string[];
+  years_in_business?: number;
+  company_size?: string;
+  description?: string;
+  source_url?: string;
+  verified?: boolean;
+  asset_suppliers?: AssetSupplier[];
   created_at: string;
   updated_at: string;
+}
+
+export interface AssetSupplier {
+  id: string;
+  asset_id: string;
+  supplier_id: string;
+  is_preferred: boolean;
+  quote_price?: number;
+  lead_time_days?: number;
+  notes?: string;
+  supplier?: Supplier;
+  asset?: Asset;
+  created_at: string;
 }
 
 export interface GeneratedFile {
@@ -115,11 +152,13 @@ export interface GeneratedFile {
   project_id: string;
   filename: string;
   file_type?: string;
-  file_path?: string;
+  file_path?: string;  // Contains the data URL (data:image/png;base64,...)
   storage_url?: string;
+  size_bytes?: number;
   metadata?: {
     type?: string;
     layout_type?: string;
+    layoutType?: string;  // Alternative field name
   };
   created_at: string;
 }

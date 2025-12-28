@@ -6,6 +6,11 @@ import { logger } from "../utils/logger.js";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
+import { 
+  ELITE_FLOOR_PLAN_PROMPT, 
+  ELITE_ATEX_ZONES_PROMPT, 
+  ELITE_AGV_ROUTING_PROMPT 
+} from "./ai/prompts/eliteSystemPrompts.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -19,8 +24,9 @@ type LayoutStreamCallback = (update: {
 }) => void;
 
 /**
- * Generates 2D layout images after planning is complete
- * Uses LangChain with Gemini to generate: Floor Plan → Equipment → ATEX → AGV Routing
+ * Elite Layout Generator Service
+ * Generates professional 2D layout images using AI with industrial engineering concepts
+ * Produces: Floor Plan → ATEX Zones → AGV Routing
  */
 class LayoutGeneratorService {
   private readonly AI_TIMEOUT_MS = 120000; // 2 minutes timeout for AI calls
@@ -42,13 +48,13 @@ class LayoutGeneratorService {
     this.generatingProjects.add(projectId);
 
     try {
-      console.log(`[LAYOUT GENERATION] Starting layout generation for project ${projectId}`);
+      console.log(`[LAYOUT GENERATION] Starting elite layout generation for project ${projectId}`);
       logger.workflow("layoutGenerating", projectId, { action: "start" });
       
       // Fetch project data
       const { data: project, error: projectError } = await supabase
         .from("projects")
-        .select("planning_data, current_step")
+        .select("name, planning_data, current_step")
         .eq("id", projectId)
         .single();
 
@@ -59,14 +65,39 @@ class LayoutGeneratorService {
         throw new Error(`Failed to fetch project: ${errorMsg}`);
       }
 
-      if (!project.planning_data) {
-        const errorMsg = `Planning data not found. Project is at step: ${project.current_step}`;
-        console.error(`[LAYOUT GENERATION] ERROR: ${errorMsg}`);
-        logger.error("Planning data not found", undefined, { projectId, currentStep: project.current_step });
-        throw new Error(`${errorMsg}. Please ensure planning is complete before generating layouts.`);
+      // Handle missing planning data gracefully with defaults
+      let planningData = project.planning_data;
+      
+      if (!planningData) {
+        console.warn(`[LAYOUT GENERATION] Warning: Planning data not found. Using default layout parameters.`);
+        logger.warn("Planning data not found, using defaults", { projectId, currentStep: project.current_step });
+        
+        // Create minimal planning data for layout generation
+        planningData = {
+          factory_dimensions: {
+            width: 50,
+            length: 80,
+            height: 10,
+            floors: 1,
+            total_area_sqm: 4000,
+          },
+          layout_zones: [
+            { name: "Production Area", area_sqm: 2000 },
+            { name: "Storage Area", area_sqm: 800 },
+            { name: "Loading Dock", area_sqm: 400 },
+            { name: "Office Space", area_sqm: 300 },
+            { name: "Utilities", area_sqm: 200 },
+          ],
+          production_lines: [
+            { line_name: "Main Production Line", function: "Primary manufacturing" }
+          ],
+          industrial_identity: {
+            factory_name: project.name || "Industrial Facility",
+            industrial_category: "Manufacturing",
+          },
+        };
       }
-
-      const planningData = project.planning_data;
+      
       console.log(`[LAYOUT GENERATION] Project data loaded. Factory dimensions:`, planningData.factory_dimensions);
 
       // Fetch assets (only name, type, and appearance by default - no images to avoid timeouts)
@@ -87,7 +118,7 @@ class LayoutGeneratorService {
       onUpdate({ type: "starting", progress: 0, total: 3 });
 
       // Step 1: Generate Factory Floor Plan
-      console.log(`[LAYOUT GENERATION] Step 1/3: Generating Factory Floor Plan...`);
+      console.log(`[LAYOUT GENERATION] Step 1/3: Generating Elite Factory Floor Plan...`);
       onUpdate({ type: "generating", layoutType: "floor_plan", progress: 1, total: 3 });
       const floorPlanImage = await this.generateFloorPlanWithAI(planningData, assetsList);
       await this.saveDebugImage(projectId, "floor_plan", floorPlanImage);
@@ -113,15 +144,9 @@ class LayoutGeneratorService {
       onUpdate({ type: "complete", layoutType: "agv_routing", imageUrl: agvImage, progress: 3, total: 3 });
       console.log(`[LAYOUT GENERATION] AGV routing saved`);
 
-      // Update project step
+      // Step transition handled by stepOrchestrator
       console.log(`[LAYOUT GENERATION] All layouts generated successfully!`);
-      logger.workflow("layoutGenerated", projectId, { action: "complete" });
-      await supabase
-        .from("projects")
-        .update({ current_step: "layoutGenerated" })
-        .eq("id", projectId);
-      
-      // Steps are now manually triggered - user must click "Next Step" button
+      logger.workflow("layoutComplete", projectId, { action: "complete" });
       console.log(`[LAYOUT GENERATION] Layout generation complete for project ${projectId}`);
     } catch (error: any) {
       console.error(`[LAYOUT GENERATION] ERROR in generate2DLayoutWithStream:`, error);
@@ -148,21 +173,19 @@ class LayoutGeneratorService {
   }
 
   /**
-   * Uses LangChain with Gemini to generate Factory Floor Plan
-   * @param planningData - Planning data including factory dimensions and production process
-   * @param assets - Array of assets with name, type, and appearance (not images)
+   * Elite Floor Plan Generation with comprehensive industrial context
    */
   private async generateFloorPlanWithAI(
     planningData: any,
     assets: any[]
   ): Promise<string> {
     try {
-      console.log(`[LAYOUT GENERATION] Generating floor plan with LangChain...`);
+      console.log(`[LAYOUT GENERATION] Generating elite floor plan with LangChain...`);
       
       const llm = createImageLLM();
       const contentParts: any[] = [];
 
-      // Add reference example (educational reference only - note it has multiple production lines)
+      // Add reference example (educational reference only)
       const referenceImage = this.loadReferenceImage("factory_floor_plan", "0.jpeg");
       if (referenceImage) {
         contentParts.push({
@@ -171,7 +194,7 @@ class LayoutGeneratorService {
         });
         contentParts.push({
           type: "text",
-          text: "Reference example of factory floor plan layout style (note: this is an educational example with multiple production lines, but generate a single unified design)",
+          text: "Reference example of professional factory floor plan layout style",
         });
       }
 
@@ -183,16 +206,48 @@ class LayoutGeneratorService {
           }).join("\n")
         : "No specific equipment listed";
 
-      // Prompt for single unified design
-      const prompt = `Generate a SINGLE unified factory floor plan (not multiple production lines).
+      // Build production zones info
+      const zonesInfo = planningData.factory_engineering?.zoning_concept?.zones
+        ? planningData.factory_engineering.zoning_concept.zones.map((z: any) => 
+            `- ${z.zone_name}: ${z.purpose} (${z.area_sqm}m²)`
+          ).join("\n")
+        : "Standard production zones";
 
-Factory dimensions: ${planningData.factory_dimensions?.width || 50}m x ${planningData.factory_dimensions?.length || 30}m
-Production process: ${planningData.production_process || "Not specified"}
+      // Build production lines info
+      const productionLinesInfo = planningData.production_lines
+        ? planningData.production_lines.map((line: any) => 
+            `- ${line.line_name}: ${line.function}`
+          ).join("\n")
+        : "Standard production line";
 
-Equipment to include:
+      // Elite prompt with comprehensive context
+      const prompt = `${ELITE_FLOOR_PLAN_PROMPT}
+
+FACTORY SPECIFICATIONS:
+- Dimensions: ${planningData.factory_dimensions?.width || 50}m x ${planningData.factory_dimensions?.length || 100}m
+- Height: ${planningData.factory_dimensions?.height || 8}m
+- Floors: ${planningData.factory_dimensions?.floors || 1}
+
+PRODUCTION PROCESS: ${planningData.production_process || "General Manufacturing"}
+
+PRODUCTION ZONES:
+${zonesInfo}
+
+PRODUCTION LINES:
+${productionLinesInfo}
+
+EQUIPMENT TO INCLUDE:
 ${equipmentList}
 
-IMPORTANT: Generate ONE unified factory floor plan that integrates all equipment in a single, cohesive layout. Do NOT create multiple separate production lines. The reference image shows multiple lines for educational purposes, but your design must be a single integrated factory floor plan.`;
+MATERIAL FLOW:
+- Raw Material Intake: ${planningData.factory_engineering?.material_flow?.raw_material_intake || "Main entrance loading dock"}
+- Production Flow: ${planningData.factory_engineering?.material_flow?.production_flow || "Linear production flow"}
+- Finished Goods Output: ${planningData.factory_engineering?.material_flow?.finished_goods_output || "Shipping dock"}
+
+SAFETY REQUIREMENTS:
+${planningData.factory_engineering?.safety_compliance?.atex_requirements || "Standard industrial safety zones"}
+
+Generate a SINGLE unified professional factory floor plan that integrates all these elements cohesively.`;
 
       contentParts.push({
         type: "text",
@@ -235,10 +290,10 @@ IMPORTANT: Generate ONE unified factory floor plan that integrates all equipment
   }
 
   /**
-   * Uses LangChain to add ATEX Zones
+   * Elite ATEX Zones Generation with safety engineering concepts
    */
   private async addATEXZonesWithAI(
-    equipmentImage: string,
+    floorPlanImage: string,
     planningData: any
   ): Promise<string> {
     try {
@@ -249,24 +304,32 @@ IMPORTANT: Generate ONE unified factory floor plan that integrates all equipment
       const contentParts: any[] = [
         {
           type: "image_url",
-          image_url: equipmentImage,
+          image_url: floorPlanImage,
         },
       ];
 
-      // Add reference example
-      // const referenceImage = this.loadReferenceImage("atex_zones", "0.jpeg");
-      // if (referenceImage) {
-      //   contentParts.push({
-      //     type: "image_url",
-      //     image_url: referenceImage,
-      //   });
-      //   contentParts.push({
-      //     type: "text",
-      //     text: "Example of ATEX zones (just to know )",
-      //   });
-      // }
+      // Get ATEX requirements from planning data
+      const atexRequirements = planningData.factory_engineering?.safety_compliance?.atex_requirements 
+        || "Standard industrial safety classification";
+      
+      const safetyZones = planningData.factory_engineering?.safety_compliance?.safety_zones
+        ? planningData.factory_engineering.safety_compliance.safety_zones.join(", ")
+        : "Production area, storage area, utility area";
 
-      const prompt = `Add ATEX zone markings to this factory layout. Mark hazardous areas (Zone 0/20, Zone 1/21, Zone 2/22) and safe areas.`;
+      const prompt = `${ELITE_ATEX_ZONES_PROMPT}
+
+SPECIFIC REQUIREMENTS FOR THIS FACTORY:
+- Production Process: ${planningData.production_process || "General Manufacturing"}
+- ATEX Requirements: ${atexRequirements}
+- Safety Zones: ${safetyZones}
+
+Based on the production process and materials involved, add appropriate ATEX zone markings:
+- Mark Zone 0/20 (continuous hazard) in RED where explosive atmospheres may be present continuously
+- Mark Zone 1/21 (frequent hazard) in ORANGE where hazards may occur during normal operation
+- Mark Zone 2/22 (infrequent hazard) in YELLOW where hazards are unlikely but possible
+- Keep safe zones clearly marked in GREEN or unmarked
+
+Add a clear legend explaining the zone classifications.`;
 
       contentParts.push({ type: "text", text: prompt });
       const message = new HumanMessage({ content: contentParts });
@@ -291,19 +354,19 @@ IMPORTANT: Generate ONE unified factory floor plan that integrates all equipment
       }
 
       console.warn(`[LAYOUT GENERATION] WARNING: AI did not generate ATEX zones image`);
-      return equipmentImage;
+      return floorPlanImage;
     } catch (error: any) {
       console.error(`[LAYOUT GENERATION] ERROR adding ATEX zones:`, error);
       logger.error("Error adding ATEX zones with AI", error);
-      return equipmentImage;
+      return floorPlanImage;
     }
   }
 
   /**
-   * Uses LangChain to add AGV Routing Paths
+   * Elite AGV Routing Generation with logistics automation concepts
    */
   private async addAGVRoutingWithAI(
-    atexImage: string,
+    floorPlanImage: string,
     planningData: any
   ): Promise<string> {
     try {
@@ -314,25 +377,38 @@ IMPORTANT: Generate ONE unified factory floor plan that integrates all equipment
       const contentParts: any[] = [
         {
           type: "image_url",
-          image_url: atexImage,
+          image_url: floorPlanImage,
         },
       ];
 
-      const prompt = `Add AGV routing paths to this factory layout. 
+      // Get material flow information
+      const materialFlow = planningData.factory_engineering?.material_flow || {};
+      
+      const prompt = `${ELITE_AGV_ROUTING_PROMPT}
 
-CRITICAL REQUIREMENT: Draw all AGV routing paths in BRIGHT RED color (#FF0000 or RGB 255,0,0) to make them clearly visible and distinguishable from the rest of the layout.
+MATERIAL FLOW FOR THIS FACTORY:
+- Raw Material Intake: ${materialFlow.raw_material_intake || "Loading dock entrance"}
+- Production Flow: ${materialFlow.production_flow || "Through production zones"}
+- Finished Goods Output: ${materialFlow.finished_goods_output || "Shipping dock"}
 
-Show paths connecting:
-- Production areas
-- Storage areas
-- Loading docks
-- Include charging stations along the routes
+ROUTING REQUIREMENTS:
+1. Draw AGV routes in BRIGHT RED (#FF0000) with 3-4 pixel minimum thickness
+2. Connect these key areas:
+   - Raw material receiving to storage
+   - Storage to production lines
+   - Between production stations
+   - Production to quality control
+   - QC to finished goods warehouse
+   - Warehouse to shipping dock
 
-Make sure the RED routing paths are:
-- Clearly visible against the factory floor background
-- Thick enough to be easily seen (minimum 3-4 pixels wide)
-- Continuous lines showing the complete route network
-- Include directional arrows in RED if possible to show AGV movement direction`;
+3. Include:
+   - Main arterial routes (thicker lines)
+   - Secondary routes (thinner lines)
+   - Charging station locations (marked with charging symbol)
+   - Directional arrows showing traffic flow
+   - Intersection management points
+
+Make the routes clearly visible against the factory layout background.`;
 
       contentParts.push({ type: "text", text: prompt });
       const message = new HumanMessage({ content: contentParts });
@@ -357,11 +433,11 @@ Make sure the RED routing paths are:
       }
 
       console.warn(`[LAYOUT GENERATION] WARNING: AI did not generate AGV routing image`);
-      return atexImage;
+      return floorPlanImage;
     } catch (error: any) {
       console.error(`[LAYOUT GENERATION] ERROR adding AGV routing:`, error);
       logger.error("Error adding AGV routing with AI", error);
-      return atexImage;
+      return floorPlanImage;
     }
   }
 

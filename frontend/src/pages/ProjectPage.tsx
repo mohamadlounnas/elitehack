@@ -5,6 +5,7 @@ import { TwoColumnPage } from "../components/layout/pages";
 import { ChatInterface } from "../components/ChatInterface";
 import { StepProgress } from "../components/StepProgress";
 import { StepDetails } from "../components/StepDetails";
+import { CompletedDashboard } from "../components/completed/CompletedDashboard";
 import { projectsApi, chatApi, planningApi, assetsApi, dataApi } from "../services/api";
 import type { Project, ProjectMessage, Asset, Supplier, GeneratedFile, TCOCalculation } from "../types";
 
@@ -17,6 +18,8 @@ export function ProjectPage() {
   const [generatedFiles, setGeneratedFiles] = useState<GeneratedFile[]>([]);
   const [tco, setTco] = useState<TCOCalculation | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [isStepProcessing, setIsStepProcessing] = useState(false); // Track if step is actively streaming
+  const [hasStepError, setHasStepError] = useState(false); // Track if step has an error
 
   useEffect(() => {
     if (id) {
@@ -102,6 +105,19 @@ export function ProjectPage() {
     }
   };
 
+  const handleGenerateReports = async () => {
+    if (!id) return;
+    try {
+      await dataApi.generateReports(id);
+      // Reload project to get updated PDF/Excel paths
+      await loadProject();
+      await loadProjectData();
+    } catch (error) {
+      console.error("Error generating reports:", error);
+      throw error; // Re-throw so the component can handle it
+    }
+  };
+
   const handleStartPlanning = async () => {
     if (!id) return;
     try {
@@ -153,6 +169,25 @@ export function ProjectPage() {
   const showPlanningView = project.current_step !== "chat";
   const isCompleted = project.current_step === "completed";
 
+  // Completed Dashboard - Full width, no sidebar
+  if (isCompleted) {
+    return (
+      <div className="flex flex-col gap-y-4">
+        <CompletedDashboard
+          project={project}
+          planningData={project.planning_data}
+          assets={assets}
+          suppliers={suppliers}
+          generatedFiles={generatedFiles}
+          tco={tco}
+          messages={messages}
+          onGenerateReports={handleGenerateReports}
+        />
+      </div>
+    );
+  }
+
+  // In-progress steps - Two column layout with sidebar
   if (showPlanningView) {
     return (
       <TwoColumnPage>
@@ -170,13 +205,17 @@ export function ProjectPage() {
               tco={tco}
               messages={messages}
               project={project}
+              onStreamingStatusChange={setIsStepProcessing}
+              onErrorStatusChange={setHasStepError}
             />
           </div>
         </TwoColumnPage.Main>
         <TwoColumnPage.Sidebar>
           <StepProgress 
             currentStep={project.current_step} 
-            onRetry={!isCompleted ? handleRetryStep : undefined}
+            isStepProcessing={isStepProcessing}
+            hasError={hasStepError}
+            onRetry={handleRetryStep}
             onNextStep={handleNextStep}
             onPrevStep={handlePrevStep}
           />

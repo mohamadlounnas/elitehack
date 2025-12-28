@@ -19,19 +19,23 @@ router.post("/:id/chat", upload.array("attachments"), async (req, res) => {
       fileCount: files.length 
     });
 
-    if (!content) {
-      logger.warn("Chat message rejected: content is required", { projectId: id });
-      return res.status(400).json({ error: "Content is required" });
+    // Allow either text content or files (or both)
+    if (!content && files.length === 0) {
+      logger.warn("Chat message rejected: content or files required", { projectId: id });
+      return res.status(400).json({ error: "Content or files are required" });
     }
 
-    // Save user message
+    // If only files, use a default prompt
+    const messageContent = content || "Please analyze the attached file(s) and provide insights relevant to industrial factory planning.";
+
+    // Save user message (store original content, not the default prompt)
     logger.db("INSERT", "project_messages", { projectId: id, role: "user" });
     const { data: userMessage, error: userError } = await supabase
       .from("project_messages")
       .insert({
         project_id: id,
         role: "user",
-        content,
+        content: content || "[Attached files for analysis]",
         attachments: files.map((f) => ({
           filename: f.originalname,
           file_type: f.mimetype,
@@ -47,8 +51,8 @@ router.post("/:id/chat", upload.array("attachments"), async (req, res) => {
     }
 
     // Process files and get AI response
-    logger.ai("Processing chat message", "gemini-3-pro-preview", { projectId: id });
-    const aiResponse = await chatService.processMessage(id, content, files);
+    logger.ai("Processing chat message", "gemini-2.5-flash", { projectId: id, fileCount: files.length });
+    const aiResponse = await chatService.processMessage(id, messageContent, files);
     logger.ai("Chat response generated", "gemini-3-pro-preview", { 
       projectId: id, 
       responseLength: aiResponse.length 

@@ -99,7 +99,7 @@ interface ProjectCardProps {
 }
 
 /**
- * Project card component with improved styling and status indicators
+ * Project card component with improved styling, brand identity, and status indicators
  */
 function ProjectCard({ project, onClick }: ProjectCardProps) {
   const stepInfo = getStepInfo(project.current_step);
@@ -109,19 +109,67 @@ function ProjectCard({ project, onClick }: ProjectCardProps) {
     year: "numeric",
   });
 
+  const primaryColor = project.primary_color || "#0F172A";
+  const secondaryColor = project.secondary_color || "#3B82F6";
+
   return (
     <Container
-      className="p-4 hover:shadow-elevation-card-hover cursor-pointer transition-all group border border-ui-border-base"
+      className="p-0 hover:shadow-elevation-card-hover cursor-pointer transition-all group border border-ui-border-base overflow-hidden"
       onClick={onClick}
     >
-      <div className="flex flex-col gap-y-3">
-        {/* Header with status */}
-        <div className="flex items-start justify-between gap-x-2">
+      {/* Brand Color Header Bar */}
+      <div 
+        className="h-2 w-full"
+        style={{ 
+          background: `linear-gradient(90deg, ${primaryColor} 0%, ${secondaryColor} 100%)` 
+        }}
+      />
+      
+      <div className="p-4 flex flex-col gap-y-3">
+        {/* Header with logo and status */}
+        <div className="flex items-start justify-between gap-x-3">
+          {/* Logo */}
+          {project.logo_url ? (
+            <div 
+              className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 shadow-sm"
+              style={{ backgroundColor: primaryColor }}
+            >
+              <img 
+                src={project.logo_url} 
+                alt="Logo" 
+                className="w-7 h-7 object-contain"
+              />
+            </div>
+          ) : (
+            <div 
+              className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0"
+              style={{ backgroundColor: primaryColor }}
+            >
+              <span className="text-white text-sm font-bold">
+                {project.name.charAt(0).toUpperCase()}
+              </span>
+            </div>
+          )}
+          
           <div className="flex-1 min-w-0">
             <Heading level="h3" className="truncate group-hover:text-ui-fg-interactive transition-colors">
               {project.name}
             </Heading>
+            {/* Brand Colors Indicator */}
+            {project.primary_color && (
+              <div className="flex items-center gap-x-1 mt-1">
+                <div 
+                  className="w-3 h-3 rounded-full border border-ui-border-base" 
+                  style={{ backgroundColor: primaryColor }}
+                />
+                <div 
+                  className="w-3 h-3 rounded-full border border-ui-border-base" 
+                  style={{ backgroundColor: secondaryColor }}
+                />
+              </div>
+            )}
           </div>
+          
           <div className="flex-shrink-0">
             {stepInfo.icon}
           </div>
@@ -166,7 +214,7 @@ function getStepInfo(step: ProjectStep): {
 } {
   const stepMap: Record<
     ProjectStep,
-    { icon: ReactNode; label: string; color: "green" | "blue" | "grey" | "orange" }
+    { icon: ReactNode; label: string; color: "green" | "blue" | "grey" | "orange" | "purple" }
   > = {
     chat: {
       icon: <CircleDottedLine className="w-4 h-4 text-ui-fg-muted" />,
@@ -178,50 +226,35 @@ function getStepInfo(step: ProjectStep): {
       label: "Planning",
       color: "blue",
     },
-    planed: {
-      icon: <CheckCircleSolid className="w-4 h-4 text-ui-tag-green-text" />,
-      label: "Planned",
-      color: "green",
+    identityGenerating: {
+      icon: <CircleHalfSolid className="w-4 h-4 text-purple-500" />,
+      label: "Brand Identity",
+      color: "purple",
     },
     assetsImagesGenerating: {
       icon: <CircleHalfSolid className="w-4 h-4 text-ui-fg-interactive" />,
       label: "Generating Images",
       color: "blue",
     },
-    assetsImagesGenerated: {
-      icon: <CheckCircleSolid className="w-4 h-4 text-ui-tag-green-text" />,
-      label: "Images Ready",
-      color: "green",
-    },
     sourcing: {
       icon: <CircleHalfSolid className="w-4 h-4 text-ui-fg-interactive" />,
       label: "Sourcing",
       color: "blue",
-    },
-    sourced: {
-      icon: <CheckCircleSolid className="w-4 h-4 text-ui-tag-green-text" />,
-      label: "Sourced",
-      color: "green",
     },
     negotiating: {
       icon: <CircleHalfSolid className="w-4 h-4 text-ui-fg-interactive" />,
       label: "Negotiating",
       color: "blue",
     },
-    negotiated: {
-      icon: <CheckCircleSolid className="w-4 h-4 text-ui-tag-green-text" />,
-      label: "Negotiated",
-      color: "green",
-    },
     cost_analysing: {
       icon: <CircleHalfSolid className="w-4 h-4 text-ui-fg-interactive" />,
       label: "Cost Analysis",
       color: "blue",
     },
-    cost_analysed: {
-      icon: <CheckCircleSolid className="w-4 h-4 text-ui-tag-green-text" />,
-      label: "Analysis Complete",
-      color: "green",
+    layoutGenerating: {
+      icon: <CircleHalfSolid className="w-4 h-4 text-ui-fg-interactive" />,
+      label: "Layout Generation",
+      color: "blue",
     },
     completed: {
       icon: <CheckCircleSolid className="w-4 h-4 text-ui-tag-green-text" />,

@@ -49,12 +49,13 @@ class ImageGenerationService {
     this.generatingProjects.add(projectId);
 
     try {
-      // First, check if all images are already generated
-      logger.db("SELECT", "assets", { projectId });
+      // First, check if all SELECTED images are already generated
+      logger.db("SELECT", "assets", { projectId, selected_for_processing: true });
       const { data: allAssets, error: allAssetsError } = await supabase
         .from("assets")
-        .select("id, name, image_generated, image_url")
-        .eq("project_id", projectId);
+        .select("id, name, image_generated, image_url, selected_for_processing")
+        .eq("project_id", projectId)
+        .eq("selected_for_processing", true);
 
       if (allAssetsError) {
         logger.error("Error checking assets", allAssetsError, { projectId });
@@ -86,32 +87,23 @@ class ImageGenerationService {
             total: allAssets.length,
           });
           
-          // Update step and move forward since all images are already generated
-          const { error: updateError } = await supabase
-            .from("projects")
-            .update({ current_step: "assetsImagesGenerated" })
-            .eq("id", projectId);
-
-          if (updateError) {
-            logger.error("Error updating step after images check", updateError, { projectId });
-          } else {
-            logger.info("All images already exist", { projectId });
-            // Steps are now manually triggered - user must click "Next Step" button
-          }
+          logger.info("All images already exist", { projectId });
+          // Step transition handled by stepOrchestrator
           return; // Don't regenerate, just return
         }
       }
 
-      // Find assets that need images
+      // Find selected assets that need images
       const { data: assets } = await supabase
         .from("assets")
         .select("*")
         .eq("project_id", projectId)
+        .eq("selected_for_processing", true)
         .eq("image_generated", false);
 
       if (!assets || assets.length === 0) {
-        // All images generated
-        logger.info("No assets need images", { projectId });
+        // All selected images generated
+        logger.info("No selected assets need images", { projectId });
         // Steps are now manually triggered - user must click "Next Step" button
         return;
       }
@@ -193,12 +185,13 @@ class ImageGenerationService {
         total,
       });
 
-      // Check if all assets are done
-      logger.db("SELECT", "assets", { projectId, image_generated: false });
+      // Check if all selected assets are done
+      logger.db("SELECT", "assets", { projectId, image_generated: false, selected_for_processing: true });
       const { data: remainingAssets, error: remainingError } = await supabase
         .from("assets")
         .select("id, name, image_generated")
         .eq("project_id", projectId)
+        .eq("selected_for_processing", true)
         .eq("image_generated", false);
 
       if (remainingError) {
@@ -207,45 +200,17 @@ class ImageGenerationService {
       }
 
       if (!remainingAssets || remainingAssets.length === 0) {
-        logger.info("All asset images generated, updating step and moving to next", { projectId });
-        
-        // Update step to assetsImagesGenerated and verify it was updated
-        const { data: updatedProject, error: updateError } = await supabase
-          .from("projects")
-          .update({ current_step: "assetsImagesGenerated" })
-          .eq("id", projectId)
-          .select("current_step")
-          .single();
-
-        if (updateError) {
-          logger.error("Error updating project step to assetsImagesGenerated", updateError, { projectId });
-          throw updateError;
-        }
-
-        if (updatedProject?.current_step !== "assetsImagesGenerated") {
-          logger.error("Step update verification failed", undefined, { 
-            projectId, 
-            expected: "assetsImagesGenerated",
-            actual: updatedProject?.current_step 
-          });
-          throw new Error("Step update verification failed");
-        }
-
-        logger.info("Step updated to assetsImagesGenerated", { 
-          projectId,
-          verifiedStep: updatedProject.current_step 
-        });
-        
-        // Steps are now manually triggered - user must click "Next Step" button
+        logger.info("All selected asset images generated successfully", { projectId });
+        // Step transition handled by stepOrchestrator
       } else {
-        logger.warn("Some assets still need images after generation loop", { 
+        logger.warn("Some selected assets still need images after generation loop", { 
           projectId, 
           remainingCount: remainingAssets.length,
           remainingAssets: remainingAssets.map(a => ({ id: a.id, name: a.name }))
         });
         
         // Try to update remaining assets or throw error
-        throw new Error(`Failed to generate images for ${remainingAssets.length} asset(s): ${remainingAssets.map(a => a.name).join(", ")}`);
+        throw new Error(`Failed to generate images for ${remainingAssets.length} selected asset(s): ${remainingAssets.map(a => a.name).join(", ")}`);
       }
     } catch (error: any) {
       console.error("Error in imageGenerationService.generateImagesForProjectWithStream:", error);
@@ -273,13 +238,14 @@ class ImageGenerationService {
 
     try {
       logger.info("Starting image generation for project", { projectId });
-      logger.db("SELECT", "assets", { projectId, image_generated: false });
+      logger.db("SELECT", "assets", { projectId, image_generated: false, selected_for_processing: true });
       
-      // Find assets that need images
+      // Find selected assets that need images
       const { data: assets, error: assetsError } = await supabase
         .from("assets")
         .select("*")
         .eq("project_id", projectId)
+        .eq("selected_for_processing", true)
         .eq("image_generated", false);
 
       if (assetsError) {
@@ -288,17 +254,18 @@ class ImageGenerationService {
       }
 
       if (!assets || assets.length === 0) {
-        logger.info("No assets found that need image generation, checking all assets", { projectId });
+        logger.info("No selected assets found that need image generation, checking all selected assets", { projectId });
         
-        // Check if there are any assets at all
+        // Check if there are any selected assets at all
         const { data: allAssets } = await supabase
           .from("assets")
-          .select("id, name, image_generated")
-          .eq("project_id", projectId);
+          .select("id, name, image_generated, selected_for_processing")
+          .eq("project_id", projectId)
+          .eq("selected_for_processing", true);
         
-        logger.info("Total assets in project", { 
+        logger.info("Total selected assets in project", { 
           projectId, 
-          totalAssets: allAssets?.length || 0,
+          totalSelectedAssets: allAssets?.length || 0,
           assetsWithImages: allAssets?.filter(a => a.image_generated).length || 0,
           assetsWithoutImages: allAssets?.filter(a => !a.image_generated).length || 0
         });
@@ -363,24 +330,20 @@ class ImageGenerationService {
         }
       }
 
-      // Check if all assets are done
-      logger.db("SELECT", "assets", { projectId, image_generated: false });
+      // Check if all selected assets are done
+      logger.db("SELECT", "assets", { projectId, image_generated: false, selected_for_processing: true });
       const { data: remainingAssets } = await supabase
         .from("assets")
         .select("id")
         .eq("project_id", projectId)
+        .eq("selected_for_processing", true)
         .eq("image_generated", false);
 
       if (!remainingAssets || remainingAssets.length === 0) {
-        logger.info("All asset images generated", { projectId });
-        logger.db("UPDATE", "projects", { projectId, newStep: "assetsImagesGenerated" });
-        await supabase
-          .from("projects")
-          .update({ current_step: "assetsImagesGenerated" })
-          .eq("id", projectId);
-        // Steps are now manually triggered - user must click "Next Step" button
+        logger.info("All selected asset images generated", { projectId });
+        // Step transition handled by stepOrchestrator
       } else {
-        logger.info("Some assets still need images", { 
+        logger.info("Some selected assets still need images", { 
           projectId, 
           remainingCount: remainingAssets.length 
         });

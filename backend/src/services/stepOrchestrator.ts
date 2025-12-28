@@ -9,17 +9,13 @@ import { logger } from "../utils/logger.js";
 export type ProjectStep =
   | "chat"
   | "planning"
-  | "planed"
+  | "identityGenerating"
+  | "assetSelection"
   | "assetsImagesGenerating"
-  | "assetsImagesGenerated"
   | "sourcing"
-  | "sourced"
   | "negotiating"
-  | "negotiated"
   | "cost_analysing"
-  | "cost_analysed"
   | "layoutGenerating"
-  | "layoutGenerated"
   | "completed";
 
 /**
@@ -38,42 +34,36 @@ class StepOrchestrator {
 
   /**
    * Defines the step flow order (must match frontend StepProgress component)
+   * Simplified flow without intermediate "complete" states
    */
   private readonly stepFlow: Record<ProjectStep, ProjectStep | null> = {
     chat: "planning",
-    planning: "planed",
-    planed: "assetsImagesGenerating",
-    assetsImagesGenerating: "assetsImagesGenerated",
-    assetsImagesGenerated: "sourcing",
-    sourcing: "sourced",
-    sourced: "negotiating",
-    negotiating: "negotiated",
-    negotiated: "cost_analysing",
-    cost_analysing: "cost_analysed",
-    cost_analysed: "layoutGenerating",
-    layoutGenerating: "layoutGenerated",
-    layoutGenerated: "completed",
+    planning: "identityGenerating",
+    identityGenerating: "assetSelection",
+    assetSelection: "assetsImagesGenerating",
+    assetsImagesGenerating: "sourcing",
+    sourcing: "negotiating",
+    negotiating: "cost_analysing",
+    cost_analysing: "layoutGenerating",
+    layoutGenerating: "completed",
     completed: null,
   };
 
   /**
    * Gets the ordered list of steps (for reference)
+   * Simplified flow without intermediate "complete" states
    */
   getStepOrder(): ProjectStep[] {
     return [
       "chat",
       "planning",
-      "planed",
+      "identityGenerating",
+      "assetSelection",
       "assetsImagesGenerating",
-      "assetsImagesGenerated",
       "sourcing",
-      "sourced",
       "negotiating",
-      "negotiated",
       "cost_analysing",
-      "cost_analysed",
       "layoutGenerating",
-      "layoutGenerated",
       "completed",
     ];
   }
@@ -210,14 +200,35 @@ class StepOrchestrator {
         throw new Error(`Failed to update step: ${updateError.message}`);
       }
 
-      logger.info("Step updated successfully, executing next step", {
+      logger.info("Step updated successfully", {
         projectId,
         from: currentStep,
         to: nextStep,
       });
 
-      // Execute the next step (executeStep will handle locking and prevent duplicates)
-      await this.executeStep(projectId, nextStep, false);
+      // NOTE: We do NOT automatically execute the step here anymore.
+      // Steps are executed via the streaming endpoint when the frontend connects.
+      // This prevents duplicate execution (once from nextStep, once from stream).
+      // The frontend will connect to /api/stream/:projectId which handles execution.
+      
+      // Only execute non-streaming steps automatically
+      // assetSelection is interactive (user selects assets), so don't auto-execute
+      const streamingSteps: ProjectStep[] = [
+        "planning",
+        "identityGenerating", 
+        "assetsImagesGenerating",
+        "sourcing",
+        "layoutGenerating",
+        "cost_analysing"
+      ];
+      
+      // Interactive steps that require user input - don't auto-execute
+      const interactiveSteps: ProjectStep[] = ["assetSelection"];
+      
+      if (!streamingSteps.includes(nextStep) && !interactiveSteps.includes(nextStep)) {
+        // Execute non-streaming, non-interactive steps (like negotiating which is bypassed)
+        await this.executeStep(projectId, nextStep, false);
+      }
     } catch (error: any) {
       logger.error("Error in nextStep", error, { projectId });
       throw error;
@@ -288,37 +299,9 @@ class StepOrchestrator {
           await planningService.startPlanning(projectId);
           break;
 
-        case "planed":
-          // Steps are now manually triggered - user must click "Next Step" button
-          logger.info("Planning complete, waiting for manual step transition", { projectId });
-          break;
-
         case "assetsImagesGenerating":
           logger.info("Starting asset image generation step", { projectId });
           await imageGenerationService.generateImagesForProject(projectId);
-          break;
-
-        case "assetsImagesGenerated":
-          // Move to sourcing after images are complete
-          logger.info("Asset images complete, moving to sourcing", { projectId });
-          // Verify all images are actually generated before moving forward
-          const { data: assetsCheck } = await supabase
-            .from("assets")
-            .select("id, image_generated")
-            .eq("project_id", projectId);
-
-          const allImagesGenerated = assetsCheck?.every((asset) => asset.image_generated) ?? false;
-
-          if (!allImagesGenerated && (assetsCheck?.length ?? 0) > 0) {
-            logger.warn("Not all images are generated, but step is assetsImagesGenerated", {
-              projectId,
-              totalAssets: assetsCheck?.length ?? 0,
-              imagesGenerated: assetsCheck?.filter((a) => a.image_generated).length ?? 0,
-            });
-          }
-
-          // Steps are now manually triggered - user must click "Next Step" button
-          logger.info("Asset images complete, waiting for manual step transition", { projectId });
           break;
 
         case "sourcing":
@@ -326,31 +309,15 @@ class StepOrchestrator {
           await sourcingService.startSourcing(projectId);
           break;
 
-        case "sourced":
-          logger.info("Sourcing complete, waiting for manual step transition", { projectId });
-          // Steps are now manually triggered - user must click "Next Step" button
-          break;
-
         case "negotiating":
           logger.info("Starting negotiation step (bypassed)", { projectId });
-          // Bypassed for now - just wait 5 seconds
-          await new Promise((resolve) => setTimeout(resolve, 5000));
-          // Steps are now manually triggered - user must click "Next Step" button
-          break;
-
-        case "negotiated":
-          logger.info("Negotiation complete, waiting for manual step transition", { projectId });
-          // Steps are now manually triggered - user must click "Next Step" button
+          // Bypassed for now - just wait 3 seconds
+          await new Promise((resolve) => setTimeout(resolve, 3000));
           break;
 
         case "cost_analysing":
           logger.info("Starting cost analysis step", { projectId });
           await costAnalysisService.analyzeCosts(projectId);
-          break;
-
-        case "cost_analysed":
-          logger.info("Cost analysis complete, waiting for manual step transition", { projectId });
-          // Steps are now manually triggered - user must click "Next Step" button
           break;
 
         case "layoutGenerating":
@@ -359,20 +326,15 @@ class StepOrchestrator {
             await layoutGeneratorService.generate2DLayout(projectId);
           } catch (error: any) {
             logger.error("Error in layout generation", error, { projectId });
-            // Don't throw - let the step stay at layoutGenerating so user can retry
             console.error(`[STEP ORCHESTRATOR] Layout generation failed:`, error.message);
             throw error; // Re-throw to prevent moving to next step on error
           }
           break;
 
-        case "layoutGenerated":
-          logger.workflow("completed", projectId, { action: "mark_complete" });
-          logger.db("UPDATE", "projects", { projectId, newStep: "completed" });
-          await supabase
-            .from("projects")
-            .update({ current_step: "completed" })
-            .eq("id", projectId);
-          logger.info("Project completed", { projectId });
+        case "assetSelection":
+          // Asset selection is handled by the frontend - user picks which assets to process
+          // No automatic execution needed, user will click "Continue" when done
+          logger.info("Asset selection step - awaiting user input", { projectId });
           break;
 
         case "chat":

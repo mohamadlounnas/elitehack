@@ -17,6 +17,12 @@ CREATE TABLE IF NOT EXISTS projects (
     planning_data JSONB,
     cost_analysis_pdf TEXT,
     business_plan_excel TEXT,
+    full_report_pdf_url TEXT,
+    -- Brand Identity fields
+    logo_url TEXT,
+    primary_color VARCHAR(7),
+    secondary_color VARCHAR(7),
+    brand_identity JSONB DEFAULT '{}'::jsonb,
     metadata JSONB DEFAULT '{}'::jsonb,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -58,8 +64,18 @@ CREATE TABLE IF NOT EXISTS suppliers (
     email VARCHAR(255),
     phone VARCHAR(50),
     location VARCHAR(255),
+    country VARCHAR(100),
+    address TEXT,
+    contact_person VARCHAR(255),
     rating DECIMAL(3, 2),
     products JSONB,
+    specializations JSONB,
+    certifications JSONB,
+    years_in_business INTEGER,
+    company_size VARCHAR(50),
+    description TEXT,
+    source_url TEXT,
+    verified BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -78,6 +94,7 @@ CREATE TABLE IF NOT EXISTS assets (
     specifications JSONB,
     image_generated BOOLEAN DEFAULT FALSE,
     image_url TEXT,
+    selected_for_processing BOOLEAN DEFAULT TRUE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -127,6 +144,22 @@ CREATE TABLE IF NOT EXISTS tco_calculations (
 );
 
 -- ===========================================
+-- Asset-Suppliers Junction Table (Many-to-Many)
+-- Supports 1-5 suppliers per asset
+-- ===========================================
+CREATE TABLE IF NOT EXISTS asset_suppliers (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    asset_id UUID NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
+    supplier_id UUID NOT NULL REFERENCES suppliers(id) ON DELETE CASCADE,
+    is_preferred BOOLEAN DEFAULT FALSE,
+    quote_price DECIMAL(15, 2),
+    lead_time_days INTEGER,
+    notes TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(asset_id, supplier_id)
+);
+
+-- ===========================================
 -- Indexes for Performance
 -- ===========================================
 CREATE INDEX IF NOT EXISTS idx_project_messages_project ON project_messages(project_id);
@@ -134,6 +167,8 @@ CREATE INDEX IF NOT EXISTS idx_project_messages_created ON project_messages(crea
 CREATE INDEX IF NOT EXISTS idx_project_files_project ON project_files(project_id);
 CREATE INDEX IF NOT EXISTS idx_assets_project ON assets(project_id);
 CREATE INDEX IF NOT EXISTS idx_assets_supplier ON assets(supplier_id);
+CREATE INDEX IF NOT EXISTS idx_asset_suppliers_asset ON asset_suppliers(asset_id);
+CREATE INDEX IF NOT EXISTS idx_asset_suppliers_supplier ON asset_suppliers(supplier_id);
 CREATE INDEX IF NOT EXISTS idx_generated_files_project ON generated_files(project_id);
 CREATE INDEX IF NOT EXISTS idx_tco_calculations_project ON tco_calculations(project_id);
 CREATE INDEX IF NOT EXISTS idx_projects_status ON projects(status);
@@ -172,8 +207,12 @@ CREATE TRIGGER update_assets_updated_at
 -- Comments for Documentation
 -- ===========================================
 COMMENT ON TABLE projects IS 'Main projects table storing factory planning projects';
-COMMENT ON COLUMN projects.current_step IS 'Current step in the workflow: chat, planning, planed, assetsImagesGenerating, assetsImagesGenerated, sourcing, sourced, negotiating, negotiated, cost_analysing, cost_analysed, completed';
+COMMENT ON COLUMN projects.current_step IS 'Current step in the workflow: chat, planning, identityGenerating, assetsImagesGenerating, sourcing, negotiating, cost_analysing, layoutGenerating, completed';
 COMMENT ON COLUMN projects.planning_data IS 'JSON data containing the AI-generated factory plan';
+COMMENT ON COLUMN projects.logo_url IS 'URL or data URL of the generated brand logo';
+COMMENT ON COLUMN projects.primary_color IS 'Primary brand color in hex format (e.g., #0F172A)';
+COMMENT ON COLUMN projects.secondary_color IS 'Secondary brand color in hex format';
+COMMENT ON COLUMN projects.brand_identity IS 'JSON data containing full brand identity (colors, typography, tagline, etc.)';
 COMMENT ON COLUMN projects.metadata IS 'Flexible metadata including layout_progress and other project-specific data';
 
 COMMENT ON TABLE project_messages IS 'Chat messages between user and AI assistant';

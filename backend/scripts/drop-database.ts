@@ -18,7 +18,8 @@ async function dropDatabase() {
     // List of all tables to truncate (in order to respect foreign key constraints)
     // Delete child tables first, then parent tables
     const tables = [
-      "tco_calculations",        // References projects
+      "asset_suppliers",          // References assets, suppliers
+      "tco_calculations",         // References projects
       "generated_files",          // References projects
       "assets",                   // References projects, suppliers
       "project_files",            // References projects

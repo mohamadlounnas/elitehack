@@ -75,6 +75,10 @@ export const planningApi = {
   prevStep: async (projectId: string): Promise<void> => {
     await api.post(`/projects/${projectId}/prev-step`);
   },
+
+  saveSelectedAssets: async (projectId: string, assetIds: string[]): Promise<void> => {
+    await api.post(`/projects/${projectId}/select-assets`, { assetIds });
+  },
 };
 
 export const assetsApi = {
@@ -100,9 +104,27 @@ export const dataApi = {
     return data;
   },
 
+  generateReports: async (projectId: string) => {
+    const { data } = await api.post(`/projects/${projectId}/generate-reports`);
+    return data;
+  },
+
   getLayoutProgress: async (projectId: string) => {
     const { data } = await api.get(`/projects/${projectId}/layout-progress`);
     return data;
+  },
+
+  generateFullReport: async (projectId: string) => {
+    const { data } = await api.post(`/projects/${projectId}/generate-full-report`);
+    return data;
+  },
+
+  getFullReportStreamUrl: (projectId: string) => {
+    return `${API_BASE_URL}/projects/${projectId}/generate-full-report/stream`;
+  },
+
+  getFullReportDownloadUrl: (projectId: string) => {
+    return `${API_BASE_URL}/projects/${projectId}/full-report-pdf`;
   },
 };
 

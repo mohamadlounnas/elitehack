@@ -6,6 +6,8 @@ import { useStepTimer } from "../hooks/useStepTimer";
 
 interface StepProgressProps {
   currentStep: ProjectStep;
+  isStepProcessing?: boolean; // True when step is actively running (streaming)
+  hasError?: boolean; // True when step encountered an error
   onRetry?: () => void;
   onNextStep?: () => void;
   onPrevStep?: () => void;
@@ -14,46 +16,54 @@ interface StepProgressProps {
 const steps: { step: ProjectStep; label: string }[] = [
   { step: "chat", label: "Chat & Requirements" },
   { step: "planning", label: "Planning" },
-  { step: "planed", label: "Plan Complete" },
-  { step: "assetsImagesGenerating", label: "Generating Images" },
-  { step: "assetsImagesGenerated", label: "Images Complete" },
+  { step: "identityGenerating", label: "Brand Identity" },
+  { step: "assetSelection", label: "Select Assets" },
+  { step: "assetsImagesGenerating", label: "Asset Images" },
   { step: "sourcing", label: "Sourcing" },
-  { step: "sourced", label: "Sourced" },
   { step: "negotiating", label: "Negotiating" },
-  { step: "negotiated", label: "Negotiated" },
   { step: "cost_analysing", label: "Cost Analysis" },
-  { step: "cost_analysed", label: "Analysis Complete" },
-  { step: "layoutGenerating", label: "Generating Layouts" },
-  { step: "layoutGenerated", label: "Layouts Complete" },
+  { step: "layoutGenerating", label: "Layout Generation" },
   { step: "completed", label: "Completed" },
 ];
 
-export function StepProgress({ currentStep, onRetry, onNextStep, onPrevStep }: StepProgressProps) {
+export function StepProgress({ currentStep, isStepProcessing = false, hasError = false, onRetry, onNextStep, onPrevStep }: StepProgressProps) {
   const currentStepIndex = steps.findIndex((s) => s.step === currentStep);
   const isActive = currentStepIndex >= 0 && steps[currentStepIndex].step === currentStep;
-  const { formattedTime } = useStepTimer(isActive);
+  const { formattedTime } = useStepTimer(isStepProcessing);
   
   // Countdown timer for completed step
   const [countdown, setCountdown] = useState<number | null>(null);
   const [isHovered, setIsHovered] = useState(false);
   const countdownRef = useRef<NodeJS.Timeout | null>(null);
 
-  const getStepStatus = (index: number): "not-started" | "in-progress" | "completed" => {
+  const getStepStatus = (index: number): "not-started" | "in-progress" | "completed" | "error" => {
     if (index < currentStepIndex) return "completed";
-    if (index === currentStepIndex) return "in-progress";
+    if (index === currentStepIndex) {
+      if (hasError) return "error";
+      return "in-progress";
+    }
     return "not-started";
   };
 
   const canGoNext = currentStepIndex < steps.length - 1;
   const canGoPrev = currentStepIndex > 0;
-  // Show countdown for any step that can go next (not the final "completed" step)
-  const shouldShowCountdown = canGoNext && onNextStep && currentStep !== "chat";
+  
+  // Only show countdown when:
+  // - Step is NOT processing (streaming complete)
+  // - No error occurred
+  // - Not at final step
+  // - Not at chat step
+  // - Has next step handler
+  const stepComplete = !isStepProcessing && !hasError && currentStep !== "chat" && currentStep !== "completed";
+  const shouldShowCountdown = canGoNext && onNextStep && stepComplete;
 
-  // Start countdown when a step is completed and can go next
+  // Start countdown only when step processing completes
   useEffect(() => {
     if (shouldShowCountdown && countdown === null) {
+      // Step just completed, start countdown
       setCountdown(5);
     } else if (!shouldShowCountdown) {
+      // Reset countdown when conditions change
       setCountdown(null);
       setIsHovered(false);
       if (countdownRef.current) {
@@ -61,7 +71,7 @@ export function StepProgress({ currentStep, onRetry, onNextStep, onPrevStep }: S
         countdownRef.current = null;
       }
     }
-  }, [shouldShowCountdown, countdown]);
+  }, [shouldShowCountdown]);
 
   // Handle countdown timer
   useEffect(() => {
@@ -138,12 +148,28 @@ export function StepProgress({ currentStep, onRetry, onNextStep, onPrevStep }: S
               </Text>
               {isActive && (
                 <div className="ml-auto flex items-center gap-2">
-                  <Text size="xsmall" className="text-ui-fg-subtle font-mono">
-                    Running for {formattedTime}
-                  </Text>
-                  <StatusBadge color="blue">
-                    Active
-                  </StatusBadge>
+                  {isStepProcessing ? (
+                    <>
+                      <Text size="xsmall" className="text-ui-fg-subtle font-mono">
+                        {formattedTime}
+                      </Text>
+                      <StatusBadge color="blue">
+                        Processing
+                      </StatusBadge>
+                    </>
+                  ) : hasError ? (
+                    <StatusBadge color="red">
+                      Error
+                    </StatusBadge>
+                  ) : currentStep !== "chat" ? (
+                    <StatusBadge color="green">
+                      Done
+                    </StatusBadge>
+                  ) : (
+                    <StatusBadge color="grey">
+                      Ready
+                    </StatusBadge>
+                  )}
                 </div>
               )}
             </div>

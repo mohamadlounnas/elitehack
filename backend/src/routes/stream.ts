@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { supabase } from "../utils/supabase.js";
 import { planningService } from "../services/ai/planningService.js";
+import { identityService } from "../services/ai/identityService.js";
 import { imageGenerationService } from "../services/imageGeneration.js";
 import { sourcingService } from "../services/ai/sourcingService.js";
 import { costAnalysisService } from "../services/ai/costAnalysisService.js";
@@ -73,6 +74,9 @@ router.get("/:id/stream", async (req, res) => {
         case "planning":
           await streamPlanning(id, sendEvent);
           break;
+        case "identityGenerating":
+          await streamIdentityGeneration(id, sendEvent);
+          break;
         case "layoutGenerating":
           await streamLayoutGeneration(id, sendEvent);
           break;
@@ -87,20 +91,16 @@ router.get("/:id/stream", async (req, res) => {
             assetsCheck.every(asset => asset.image_generated && asset.image_url);
           
           if (allImagesGenerated) {
-            logger.info("All images already generated, moving to next step", { projectId: id });
+            logger.info("All images already generated", { projectId: id });
             sendEvent("status", { 
               step: "assetsImagesGenerating", 
-              message: "All images already generated. Moving to next step..." 
+              message: "All images already generated." 
             });
-            // Update step
-            await supabase
-              .from("projects")
-              .update({ current_step: "assetsImagesGenerated" })
-              .eq("id", id);
-            // Steps are now manually triggered - user must click "Next Step" button
+            // Transition to next step
+            await stepOrchestrator.nextStep(id);
             sendEvent("complete", { 
-              step: "assetsImagesGenerated", 
-              message: "Image generation complete. Click 'Next Step' to continue." 
+              step: "assetsImagesGenerating", 
+              message: "Image generation complete." 
             });
           } else {
             await streamImageGeneration(id, sendEvent);
@@ -150,12 +150,46 @@ async function streamPlanning(projectId: string, sendEvent: (event: string, data
       });
     });
 
+    // Transition to next step after successful completion
+    await stepOrchestrator.nextStep(projectId);
+
     sendEvent("complete", { 
       step: "planning", 
       message: "Planning complete!" 
     });
   } catch (error: any) {
     sendEvent("error", { step: "planning", message: error.message });
+  }
+}
+
+/**
+ * Stream brand identity generation with real-time updates
+ */
+async function streamIdentityGeneration(projectId: string, sendEvent: (event: string, data: any) => void) {
+  sendEvent("status", { step: "identityGenerating", message: "Starting brand identity generation..." });
+
+  try {
+    await identityService.generateIdentityWithStream(projectId, (update) => {
+      sendEvent("update", {
+        step: "identityGenerating",
+        type: update.type,
+        content: update.content,
+        progress: update.progress,
+        colors: update.colors,
+        logoUrl: update.logoUrl,
+      });
+    });
+
+    // Transition to next step after successful completion
+    await stepOrchestrator.nextStep(projectId);
+
+    sendEvent("complete", { 
+      step: "identityGenerating", 
+      message: "Brand identity generated successfully!" 
+    });
+  } catch (error: any) {
+    logger.error("Error in identity generation stream", error, { projectId });
+    sendEvent("error", { step: "identityGenerating", message: error.message });
   }
 }
 
@@ -177,32 +211,14 @@ async function streamImageGeneration(projectId: string, sendEvent: (event: strin
       });
     });
 
+    // Transition to next step after successful completion
+    await stepOrchestrator.nextStep(projectId);
+
     logger.info("Image generation stream completed, sending completion event", { projectId });
     sendEvent("complete", { 
       step: "assetsImagesGenerating", 
       message: "All images generated! Moving to next step..." 
     });
-    
-    // Give a moment for the step transition to complete
-    await new Promise(resolve => setTimeout(resolve, 500));
-    
-    // Check the current step to confirm transition
-    const { data: project } = await supabase
-      .from("projects")
-      .select("current_step")
-      .eq("id", projectId)
-      .single();
-    
-    if (project) {
-      logger.info("Step transition status", { 
-        projectId, 
-        currentStep: project.current_step 
-      });
-      sendEvent("status", { 
-        step: project.current_step, 
-        message: `Moved to ${project.current_step} step` 
-      });
-    }
   } catch (error: any) {
     logger.error("Error in image generation stream", error, { projectId });
     sendEvent("error", { step: "assetsImagesGenerating", message: error.message });
@@ -213,25 +229,36 @@ async function streamImageGeneration(projectId: string, sendEvent: (event: strin
  * Stream sourcing progress for each supplier
  */
 async function streamSourcing(projectId: string, sendEvent: (event: string, data: any) => void) {
-  sendEvent("status", { step: "sourcing", message: "Starting supplier sourcing..." });
+  logger.info("Starting sourcing stream", { projectId });
+  sendEvent("status", { step: "sourcing", message: "Starting elite supplier sourcing..." });
 
   try {
     await sourcingService.startSourcingWithStream(projectId, (update) => {
+      logger.debug("Sourcing update", { projectId, type: update.type, asset: update.asset?.name });
+      
       sendEvent("update", {
         step: "sourcing",
         type: update.type,
         asset: update.asset,
         supplier: update.supplier,
+        suppliers: update.suppliers,
         progress: update.progress,
         total: update.total,
+        message: update.message,
       });
     });
 
+    // Transition to next step after successful completion
+    await stepOrchestrator.nextStep(projectId);
+
     sendEvent("complete", { 
       step: "sourcing", 
-      message: "Sourcing complete!" 
+      message: "Elite sourcing complete! All suppliers identified and verified." 
     });
+    
+    logger.info("Sourcing stream completed", { projectId });
   } catch (error: any) {
+    logger.error("Error in sourcing stream", error, { projectId });
     sendEvent("error", { step: "sourcing", message: error.message });
   }
 }
@@ -245,18 +272,19 @@ async function streamLayoutGeneration(projectId: string, sendEvent: (event: stri
 
   try {
     await layoutGeneratorService.generate2DLayoutWithStream(projectId, (update) => {
-      logger.debug("Layout generation update", { projectId, type: update.type, layoutType: update.layoutType, iteration: update.iteration });
+      logger.debug("Layout generation update", { projectId, type: update.type, layoutType: update.layoutType });
       sendEvent("update", {
         step: "layoutGenerating",
         type: update.type,
         layoutType: update.layoutType,
         imageUrl: update.imageUrl,
-        iteration: update.iteration,
-        feedback: update.feedback,
         progress: update.progress,
         total: update.total,
       });
     });
+
+    // Transition to next step after successful completion
+    await stepOrchestrator.nextStep(projectId);
 
     sendEvent("complete", { 
       step: "layoutGenerating", 
@@ -282,6 +310,9 @@ async function streamCostAnalysis(projectId: string, sendEvent: (event: string, 
         progress: update.progress,
       });
     });
+
+    // Transition to next step after successful completion
+    await stepOrchestrator.nextStep(projectId);
 
     sendEvent("complete", { 
       step: "cost_analysing", 
