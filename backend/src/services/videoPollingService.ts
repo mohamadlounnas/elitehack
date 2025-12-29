@@ -1,5 +1,5 @@
 /**
- * Background service to poll Kie.ai video generation tasks
+ * Background service to poll Kie.ai Veo 3.1 video generation tasks
  * Runs independently of SSE connections to ensure videos are processed even if client disconnects
  */
 
@@ -8,7 +8,7 @@ import { logger } from "../utils/logger.js";
 import axios from "axios";
 
 const POLL_INTERVAL_MS = 10000; // Poll every 10 seconds
-const MAX_POLL_AGE_MS = 30 * 60 * 1000; // Stop polling after 30 minutes
+const MAX_POLL_AGE_MS = 45 * 60 * 1000; // Stop polling after 45 minutes (Veo can take longer)
 const POLL_QUERY_TIMEOUT_MS = 10000; // 10 second timeout for polling queries
 
 interface VideoProject {
@@ -16,8 +16,15 @@ interface VideoProject {
   project_id: string;
   status: string;
   metadata?: {
+    // Legacy Hailuo task IDs
     kie_task_id?: string;
     kie_task_created_at?: string;
+    // Veo 3.1 task IDs
+    veo_task_id?: string;
+    veo_task_created_at?: string;
+    veo_model?: string;
+    veo_generation_type?: string;
+    // Frame prompts
     first_frame_prompt?: string;
     last_frame_prompt?: string;
   };
@@ -109,11 +116,11 @@ class VideoPollingService {
         }
 
         // Step 2: Fetch actual videos (with timeout protection from client)
+        // Support both legacy Hailuo (kie_task_id) and new Veo 3.1 (veo_task_id)
         const { data: pendingVideos, error } = await pollingClient
           .from("video_projects")
           .select("id, project_id, status, video_url, metadata")
           .eq("status", "video_generating")
-          .not("metadata->>kie_task_id", "is", null)
           .limit(50); // Limit to prevent huge queries
 
         if (error) {
@@ -155,20 +162,24 @@ class VideoPollingService {
 
   private async checkVideoStatus(video: VideoProject, kieApiKey: string) {
     try {
-      const taskId = video.metadata?.kie_task_id;
+      // Support both Veo 3.1 (veo_task_id) and legacy Hailuo (kie_task_id)
+      const taskId = video.metadata?.veo_task_id || video.metadata?.kie_task_id;
+      const isVeoTask = !!video.metadata?.veo_task_id;
+      
       if (!taskId) {
         logger.warn("Video has no task ID, skipping", { videoId: video.id });
         return;
       }
 
-      // Check if task is too old (give up after 30 minutes)
-      const taskCreatedAt = video.metadata?.kie_task_created_at;
+      // Check if task is too old (give up after configured timeout)
+      const taskCreatedAt = video.metadata?.veo_task_created_at || video.metadata?.kie_task_created_at;
       if (taskCreatedAt) {
         const age = Date.now() - new Date(taskCreatedAt).getTime();
         if (age > MAX_POLL_AGE_MS) {
           logger.warn("Video task too old, marking as failed", {
             videoId: video.id,
             age: Math.round(age / 1000 / 60) + " minutes",
+            isVeoTask,
           });
           await supabase
             .from("video_projects")
@@ -176,7 +187,7 @@ class VideoPollingService {
               status: "frames_ready",
               metadata: {
                 ...video.metadata,
-                kie_task_error: "Task timeout after 30 minutes",
+                [isVeoTask ? "veo_task_error" : "kie_task_error"]: `Task timeout after ${Math.round(MAX_POLL_AGE_MS / 1000 / 60)} minutes`,
               },
             })
             .eq("id", video.id);
@@ -184,102 +195,212 @@ class VideoPollingService {
         }
       }
 
-      // Query task status from Kie.ai
-      const statusResponse = await axios.get(
-        `https://api.kie.ai/api/v1/jobs/recordInfo?taskId=${taskId}`,
-        {
-          headers: {
-            Authorization: `Bearer ${kieApiKey}`,
-          },
-        }
-      );
+      // Query task status from Kie.ai - use different endpoints for Veo vs Hailuo
+      const statusEndpoint = isVeoTask 
+        ? `https://api.kie.ai/api/v1/veo/record-info?taskId=${taskId}`
+        : `https://api.kie.ai/api/v1/jobs/recordInfo?taskId=${taskId}`;
+        
+      const statusResponse = await axios.get(statusEndpoint, {
+        headers: {
+          Authorization: `Bearer ${kieApiKey}`,
+        },
+      });
 
       if (statusResponse.data.code !== 200) {
+        // For Veo, code 422 with "record is null" means task is still initializing
+        if (isVeoTask && statusResponse.data.code === 422 && statusResponse.data.msg?.includes("record is null")) {
+          logger.debug("Veo task still initializing", { videoId: video.id, taskId });
+          return; // Will retry on next poll
+        }
         logger.error("Failed to check task status", {
           videoId: video.id,
           taskId,
+          isVeoTask,
           error: statusResponse.data.msg,
         });
         return;
       }
 
       const taskData = statusResponse.data.data;
-      const state = taskData.state;
+      
+      // Handle null taskData - task might still be initializing
+      if (!taskData) {
+        logger.debug("Task data is null, task might still be initializing", { 
+          videoId: video.id, 
+          taskId, 
+          isVeoTask 
+        });
+        return; // Will retry on next poll
+      }
 
-      if (state === "waiting") {
-        // Still processing, do nothing
-        logger.debug("Video still processing", { videoId: video.id, taskId });
-        return;
-      } else if (state === "success") {
-        // Video generation complete!
-        try {
-          const resultJson = JSON.parse(taskData.resultJson);
-          const videoUrl = resultJson.resultUrls?.[0];
+      // Handle Veo and Hailuo differently due to different response structures
+      if (isVeoTask) {
+        // Veo uses successFlag: 0 = Generating, 1 = Success, 2 = Failed, 3 = Generation Failed
+        const successFlag = taskData.successFlag;
 
-          if (!videoUrl) {
-            throw new Error("No video URL in result");
+        if (successFlag === 0) {
+          // Still generating
+          logger.debug("Veo video still generating", { videoId: video.id, taskId });
+          return;
+        } else if (successFlag === 1) {
+          // Success!
+          try {
+            const response = taskData.response;
+            let videoUrl: string | null = null;
+            
+            if (response?.resultUrls && response.resultUrls.length > 0) {
+              videoUrl = response.resultUrls[0];
+            }
+
+            if (!videoUrl) {
+              throw new Error("No video URL in Veo result");
+            }
+
+            await supabase
+              .from("video_projects")
+              .update({
+                video_url: videoUrl,
+                status: "completed",
+                metadata: {
+                  ...video.metadata,
+                  veo_task_completed_at: new Date().toISOString(),
+                  veo_fallback_used: taskData.fallbackFlag || false,
+                },
+              })
+              .eq("id", video.id);
+
+            logger.info("Veo video generation completed", {
+              videoId: video.id,
+              taskId,
+              videoUrl,
+            });
+          } catch (parseError: any) {
+            logger.error("Failed to parse Veo video result", {
+              videoId: video.id,
+              taskId,
+              error: parseError.message,
+            });
+
+            await supabase
+              .from("video_projects")
+              .update({
+                status: "frames_ready",
+                metadata: {
+                  ...video.metadata,
+                  veo_task_error: "Failed to parse video result",
+                },
+              })
+              .eq("id", video.id);
           }
-
-          // Update video project
-          await supabase
-            .from("video_projects")
-            .update({
-              video_url: videoUrl,
-              status: "completed",
-              metadata: {
-                ...video.metadata,
-                kie_task_completed_at: new Date().toISOString(),
-                kie_task_cost_time: taskData.costTime,
-              },
-            })
-            .eq("id", video.id);
-
-          logger.info("Video generation completed", {
+        } else if (successFlag === 2 || successFlag === 3) {
+          // Failed
+          const errorMsg = taskData.errorMessage || "Veo video generation failed";
+          logger.error("Veo video generation failed", {
             videoId: video.id,
             taskId,
-            videoUrl,
-          });
-        } catch (parseError: any) {
-          logger.error("Failed to parse video result", {
-            videoId: video.id,
-            taskId,
-            error: parseError.message,
+            error: errorMsg,
+            errorCode: taskData.errorCode,
           });
 
-          // Mark as failed
           await supabase
             .from("video_projects")
             .update({
               status: "frames_ready",
               metadata: {
                 ...video.metadata,
-                kie_task_error: "Failed to parse video result",
+                veo_task_error: errorMsg,
+                veo_task_error_code: taskData.errorCode,
               },
             })
             .eq("id", video.id);
         }
-      } else if (state === "fail") {
-        // Video generation failed
-        const errorMsg = taskData.failMsg || "Video generation failed";
-        logger.error("Video generation failed", {
-          videoId: video.id,
-          taskId,
-          error: errorMsg,
-          failCode: taskData.failCode,
-        });
+      } else {
+        // Legacy Hailuo handling
+        const state = taskData.state;
 
-        // Reset status so user can retry
-        await supabase
-          .from("video_projects")
-          .update({
-            status: "frames_ready",
-            metadata: {
-              ...video.metadata,
-              kie_task_error: errorMsg,
-              kie_task_fail_code: taskData.failCode,
-            },
-          })
-          .eq("id", video.id);
+        if (state === "waiting" || state === "processing") {
+          // Still processing, do nothing
+          logger.debug("Hailuo video still processing", { videoId: video.id, taskId, state });
+          return;
+        } else if (state === "success") {
+          // Video generation complete!
+          try {
+            const resultJson = JSON.parse(taskData.resultJson);
+            let videoUrl: string | null = null;
+            
+            if (resultJson.resultUrls) {
+              const urls = typeof resultJson.resultUrls === "string" 
+                ? JSON.parse(resultJson.resultUrls) 
+                : resultJson.resultUrls;
+              if (Array.isArray(urls) && urls.length > 0) {
+                videoUrl = urls[0];
+              } else if (typeof urls === "string") {
+                videoUrl = urls;
+              }
+            }
+
+            if (!videoUrl) {
+              throw new Error("No video URL in result");
+            }
+
+            await supabase
+              .from("video_projects")
+              .update({
+                video_url: videoUrl,
+                status: "completed",
+                metadata: {
+                  ...video.metadata,
+                  kie_task_completed_at: new Date().toISOString(),
+                  kie_task_cost_time: taskData.costTime,
+                },
+              })
+              .eq("id", video.id);
+
+            logger.info("Hailuo video generation completed", {
+              videoId: video.id,
+              taskId,
+              videoUrl,
+            });
+          } catch (parseError: any) {
+            logger.error("Failed to parse Hailuo video result", {
+              videoId: video.id,
+              taskId,
+              error: parseError.message,
+            });
+
+            await supabase
+              .from("video_projects")
+              .update({
+                status: "frames_ready",
+                metadata: {
+                  ...video.metadata,
+                  kie_task_error: "Failed to parse video result",
+                },
+              })
+              .eq("id", video.id);
+          }
+        } else if (state === "fail") {
+          // Video generation failed
+          const errorMsg = taskData.failMsg || "Video generation failed";
+          logger.error("Hailuo video generation failed", {
+            videoId: video.id,
+            taskId,
+            error: errorMsg,
+            failCode: taskData.failCode,
+          });
+
+          await supabase
+            .from("video_projects")
+            .update({
+              status: "frames_ready",
+              metadata: {
+                ...video.metadata,
+                kie_task_error: errorMsg,
+                kie_task_fail_code: taskData.failCode,
+              },
+            })
+            .eq("id", video.id);
+        }
       }
     } catch (error: any) {
       logger.error("Error checking video status", {

@@ -1267,6 +1267,19 @@ export function CompletedDashboard({
                   Re-source Suppliers
                 </Button>
                 <Button
+                  variant="primary"
+                  size="small"
+                  onClick={() => {
+                    // Open catalog PDF in new tab
+                    const apiBase = import.meta.env.VITE_API_BASE_URL || "http://localhost:3001/api";
+                    window.open(`${apiBase}/projects/${project.id}/equipment-catalog`, "_blank");
+                  }}
+                  className="gap-x-2"
+                >
+                  <DocumentText className="w-4 h-4" />
+                  Download Catalog
+                </Button>
+                <Button
                   variant="secondary"
                   size="small"
                   onClick={() => {
@@ -1920,11 +1933,11 @@ export function CompletedDashboard({
                   className="p-0 overflow-hidden cursor-pointer hover:shadow-lg transition-shadow group"
                   onClick={() => handleEditVideo(video)}
                 >
-                  {/* Thumbnail */}
+                  {/* Thumbnail - prefer first frame for opening shot preview */}
                   <div className="aspect-video bg-ui-bg-subtle relative overflow-hidden">
-                    {video.last_frame_url ? (
+                    {(video.first_frame_url || video.last_frame_url) ? (
                       <img 
-                        src={video.last_frame_url} 
+                        src={video.first_frame_url || video.last_frame_url || ""} 
                         alt={video.title}
                         className="w-full h-full object-cover group-hover:scale-105 transition-transform"
                       />

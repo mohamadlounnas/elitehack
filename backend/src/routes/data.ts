@@ -349,6 +349,99 @@ router.get("/:id/business-plan-excel", async (req, res) => {
 });
 
 /**
+ * Generate and download Equipment Catalog PDF
+ */
+router.get("/:id/equipment-catalog", async (req, res) => {
+  try {
+    const { id } = req.params;
+    logger.info("Generating equipment catalog PDF", { projectId: id });
+
+    // Fetch project details
+    const { data: project, error: projectError } = await supabase
+      .from("projects")
+      .select("id, name, planning_data, primary_color, secondary_color, logo_url")
+      .eq("id", id)
+      .single();
+
+    if (projectError || !project) {
+      logger.warn("Project not found for catalog generation", { projectId: id });
+      return res.status(404).json({ error: "Project not found" });
+    }
+
+    // Fetch assets
+    const { data: assets, error: assetsError } = await supabase
+      .from("assets")
+      .select("*")
+      .eq("project_id", id)
+      .order("created_at", { ascending: true });
+
+    if (assetsError) {
+      logger.error("Error fetching assets for catalog", assetsError, { projectId: id });
+      return res.status(500).json({ error: assetsError.message });
+    }
+
+    // Fetch suppliers with their asset relationships
+    const assetIds = (assets || []).map(a => a.id);
+    let suppliers: any[] = [];
+
+    if (assetIds.length > 0) {
+      // Get asset_suppliers junction data
+      const { data: assetSuppliers, error: asError } = await supabase
+        .from("asset_suppliers")
+        .select("*")
+        .in("asset_id", assetIds);
+
+      if (!asError && assetSuppliers && assetSuppliers.length > 0) {
+        const supplierIds = [...new Set(assetSuppliers.map((as: any) => as.supplier_id).filter(Boolean))];
+        
+        if (supplierIds.length > 0) {
+          const { data: suppliersData, error: suppError } = await supabase
+            .from("suppliers")
+            .select("*")
+            .in("id", supplierIds);
+
+          if (!suppError && suppliersData) {
+            // Attach asset_suppliers relationships to each supplier
+            suppliers = suppliersData.map(s => ({
+              ...s,
+              asset_suppliers: assetSuppliers.filter((as: any) => as.supplier_id === s.id)
+            }));
+          }
+        }
+      }
+    }
+
+    // Import the catalog generator dynamically
+    const { equipmentCatalogGenerator } = await import("../services/equipmentCatalogGenerator.js");
+
+    // Generate catalog PDF
+    const pdfBuffer = await equipmentCatalogGenerator.generateCatalog({
+      projectName: project.name,
+      factoryName: project.planning_data?.industrial_identity?.factory_name,
+      assets: assets || [],
+      suppliers,
+      primaryColor: project.primary_color,
+      secondaryColor: project.secondary_color,
+      logoUrl: project.logo_url,
+    });
+
+    // Send PDF response
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `attachment; filename="equipment_catalog_${id}.pdf"`);
+    res.send(pdfBuffer);
+
+    logger.info("Equipment catalog PDF generated successfully", { 
+      projectId: id, 
+      assetCount: assets?.length || 0,
+      supplierCount: suppliers.length 
+    });
+  } catch (error: any) {
+    logger.error("Error generating equipment catalog PDF", error, { projectId: req.params.id });
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
  * Export Planning Data as JSON
  */
 router.get("/:id/export/planning", async (req, res) => {

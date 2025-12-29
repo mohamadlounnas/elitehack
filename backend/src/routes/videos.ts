@@ -25,6 +25,7 @@ interface VideoProject {
   project_id: string;
   title: string;
   prompt: string | null;
+  first_frame_url: string | null;
   last_frame_url: string | null;
   video_url: string | null;
   status: string;
@@ -126,8 +127,8 @@ router.patch("/:projectId/videos/:videoId", async (req, res) => {
     const { projectId, videoId } = req.params;
     const updates = req.body;
 
-    // Only allow updating specific fields (first_frame_url removed)
-    const allowedFields = ["title", "prompt", "last_frame_url", "video_url", "status", "metadata"];
+    // Only allow updating specific fields
+    const allowedFields = ["title", "prompt", "first_frame_url", "last_frame_url", "video_url", "status", "metadata"];
     const filteredUpdates: any = {};
     for (const key of allowedFields) {
       if (updates[key] !== undefined) {
@@ -181,12 +182,12 @@ router.delete("/:projectId/videos/:videoId", async (req, res) => {
 });
 
 /**
- * Generate last frame for a video project (SSE streaming)
- * Note: First frame functionality has been removed
+ * Generate frames for a video project (SSE streaming)
+ * Supports both "first" and "last" frame generation for Veo 3.1 two-frame video
  */
 router.get("/:projectId/videos/:videoId/generate-frames/stream", async (req, res) => {
   const { projectId, videoId } = req.params;
-  const frameType = req.query.frame as string || "last"; // Only "last" frame is supported now
+  const frameType = req.query.frame as string || "first"; // "first" or "last"
 
   // Set up SSE
   res.setHeader("Content-Type", "text/event-stream");
@@ -203,9 +204,9 @@ router.get("/:projectId/videos/:videoId/generate-frames/stream", async (req, res
       return res.end();
     }
 
-    // Only allow "last" frame generation
-    if (frameType !== "last") {
-      sendEvent("error", { message: "Only last frame generation is supported" });
+    // Validate frame type
+    if (frameType !== "first" && frameType !== "last") {
+      sendEvent("error", { message: "Invalid frame type. Must be 'first' or 'last'" });
       return res.end();
     }
 
@@ -286,7 +287,7 @@ Key Equipment: ${assets.map((a: any) => a.name).join(", ")}
         
         // Create FormData
         const formData = new FormData();
-        formData.append("file", blob, `frame_${Date.now()}.png`);
+        formData.append("file", blob, `frame_${frameType}_${Date.now()}.png`);
 
         // Upload to /tmp/upload API
         const storageServerUrl = process.env.STORAGE_SERVER_URL || "http://localhost:3333";
@@ -309,6 +310,7 @@ Key Equipment: ${assets.map((a: any) => a.name).join(", ")}
         logger.info("Image uploaded to tmp storage", {
           url: uploadResult.url,
           videoId,
+          frameType,
         });
         
         return uploadResult.url;
@@ -382,12 +384,16 @@ Key Equipment: ${assets.map((a: any) => a.name).join(", ")}
     const logoImage = processImageToBase64(project.logo_url);
 
     sendEvent("progress", { 
-      message: "Generating last frame...",
-      frame: "last",
+      message: `Generating ${frameType} frame...`,
+      frame: frameType,
     });
 
-    // Get prompt from metadata, fall back to global prompt, then default
-    const userPrompt = videoProject.metadata?.last_frame_prompt || videoProject.prompt || "Create a professional factory production floor view";
+    // Get prompt from metadata based on frame type
+    const promptKey = frameType === "first" ? "first_frame_prompt" : "last_frame_prompt";
+    const defaultPrompt = frameType === "first" 
+      ? "Create a professional factory exterior or entrance view"
+      : "Create a professional factory production floor view showing completion/success";
+    const userPrompt = videoProject.metadata?.[promptKey] || videoProject.prompt || defaultPrompt;
 
     let framePrompt: string;
     let imageParts: any[] = [];
@@ -414,24 +420,60 @@ Key Equipment: ${assets.map((a: any) => a.name).join(", ")}
       });
     }
 
-    framePrompt = `Create a cinematic shot for a factory promotional video.
+    // Different prompts for first and last frames to create a narrative
+    // NOTE: Industry 5.0 = fully autonomous production line, NO humans on production floor
+    if (frameType === "first") {
+      framePrompt = `Créez le plan d'OUVERTURE pour une vidéo promotionnelle d'usine Industrie 5.0.
 
 ${factoryContext}
 
-User Description: ${userPrompt}
+Description utilisateur: ${userPrompt}
 
-${layoutImage ? "IMPORTANT: The factory layout plan is attached - use it to understand the facility structure and ensure accuracy." : ""}
-${logoImage ? "BRAND CONTEXT: The company logo is attached - understand the brand identity, colors, and style. The video should reflect this brand aesthetic." : ""}
+${layoutImage ? "IMPORTANT: Le plan d'aménagement de l'usine est joint - utilisez-le pour comprendre la structure de l'installation et assurer la précision." : ""}
+${logoImage ? "CONTEXTE DE MARQUE: Le logo de l'entreprise est joint - comprenez l'identité de marque, les couleurs et le style. La vidéo doit refléter cette esthétique de marque." : ""}
 
-Requirements:
-- Photorealistic, high-quality image  
-- Showcase the main production floor with machinery in operation
-- Dynamic angle showing the scale and capability of the facility
-- Warm, inviting lighting suggesting productivity and success
-- Workers visible but not the main focus
-- Should feel like an impressive shot for a promotional video
-- 16:9 aspect ratio composition
-- DO NOT include any text, logos, or overlays (the logo is for reference only, do not embed it in the image)`;
+IMPORTANT - INDUSTRIE 5.0:
+- Cette usine représente l'Industrie 5.0 avec une ligne de production ENTIÈREMENT AUTONOME
+- AUCUN humain ne doit être visible sur la ligne de production ou l'atelier de fabrication
+- Les humains peuvent être présents dans d'autres zones (bureaux, accueil, zones de supervision) mais PAS sur le sol de production
+- Montrez des robots, des bras automatisés, des AGV (véhicules à guidage automatique), et des machines intelligentes
+
+Exigences pour la PREMIÈRE IMAGE (Plan d'ouverture):
+- Image photoréaliste de haute qualité
+- Montrez un plan d'établissement - extérieur, entrée, ou vue large de l'usine
+- Créez un sentiment d'anticipation et de professionnalisme
+- Éclairage matinal/lumineux suggérant une nouvelle journée de productivité
+- Transmettez l'échelle, la modernité et la capacité de l'installation
+- Doit ressembler à la scène d'ouverture d'une vidéo d'entreprise professionnelle
+- Composition au format 16:9
+- NE PAS inclure de texte, logos ou superpositions (le logo est uniquement pour référence, ne pas l'intégrer dans l'image)`;
+    } else {
+      framePrompt = `Créez le plan de CLÔTURE pour une vidéo promotionnelle d'usine Industrie 5.0.
+
+${factoryContext}
+
+Description utilisateur: ${userPrompt}
+
+${layoutImage ? "IMPORTANT: Le plan d'aménagement de l'usine est joint - utilisez-le pour comprendre la structure de l'installation et assurer la précision." : ""}
+${logoImage ? "CONTEXTE DE MARQUE: Le logo de l'entreprise est joint - comprenez l'identité de marque, les couleurs et le style. La vidéo doit refléter cette esthétique de marque." : ""}
+
+IMPORTANT - INDUSTRIE 5.0:
+- Cette usine représente l'Industrie 5.0 avec une ligne de production ENTIÈREMENT AUTONOME
+- AUCUN humain ne doit être visible sur la ligne de production ou l'atelier de fabrication
+- Les humains peuvent être présents dans d'autres zones (bureaux, salles de contrôle, zones de supervision) mais PAS sur le sol de production
+- Montrez des robots en pleine action, des bras automatisés travaillant, des AGV transportant des matériaux, et des machines intelligentes synchronisées
+
+Exigences pour la DERNIÈRE IMAGE (Plan de clôture):
+- Image photoréaliste de haute qualité
+- Montrez l'atelier de production avec les machines en plein fonctionnement AUTONOME
+- Angle dynamique montrant la productivité et le succès
+- Éclairage chaleureux, heure dorée suggérant l'accomplissement
+- Robots et machines automatisées visibles, montrant l'efficacité et la précision
+- Transmettez l'achèvement, le succès et l'excellence opérationnelle
+- Doit ressembler au finale impressionnant d'une vidéo promotionnelle
+- Composition au format 16:9
+- NE PAS inclure de texte, logos ou superpositions (le logo est uniquement pour référence, ne pas l'intégrer dans l'image)`;
+    }
 
     try {
       // Combine text prompt with image parts
@@ -455,36 +497,37 @@ Requirements:
           const publicUrl = await uploadImageToTmpStorage(imageUrl);
           
           // Update video project with generated frame
+          const updateField = frameType === "first" ? "first_frame_url" : "last_frame_url";
           await supabase
             .from("video_projects")
             .update({
-              last_frame_url: publicUrl,
+              [updateField]: publicUrl,
               status: "frames_ready",
             })
             .eq("id", videoId);
 
           // Send the public URL
           sendEvent("frame_complete", {
-            frame: "last",
+            frame: frameType,
             imageUrl: publicUrl,
           });
         } catch (saveError: any) {
-          logger.error("Error uploading last frame", saveError);
+          logger.error(`Error uploading ${frameType} frame`, saveError);
           sendEvent("frame_error", {
-            frame: "last",
+            frame: frameType,
             message: `Failed to upload frame: ${saveError.message}`,
           });
         }
       } else {
         sendEvent("frame_error", {
-          frame: "last",
+          frame: frameType,
           message: "Failed to generate frame image",
         });
       }
     } catch (frameError: any) {
-      logger.error("Error generating last frame", frameError);
+      logger.error(`Error generating ${frameType} frame`, frameError);
       sendEvent("frame_error", {
-        frame: "last",
+        frame: frameType,
         message: frameError.message,
       });
     }
@@ -502,7 +545,8 @@ Requirements:
 });
 
 /**
- * Generate video from frames using Kie.ai Hailuo 2-3 Image To Video Standard API (SSE streaming)
+ * Generate video from frames using Kie.ai Veo 3.1 API (SSE streaming)
+ * Uses FIRST_AND_LAST_FRAMES_2_VIDEO generation type for two-frame video generation
  */
 router.get("/:projectId/videos/:videoId/generate-video/stream", async (req, res) => {
   const { projectId, videoId } = req.params;
@@ -523,10 +567,10 @@ router.get("/:projectId/videos/:videoId/generate-video/stream", async (req, res)
       return res.end();
     }
 
-    // Get video project (minimal check)
+    // Get video project with all frame URLs
     const { data: videoProject, error: videoError } = await supabase
       .from("video_projects")
-      .select("id, metadata")
+      .select("id, metadata, first_frame_url, last_frame_url, prompt")
       .eq("id", videoId)
       .eq("project_id", projectId)
       .single();
@@ -536,45 +580,43 @@ router.get("/:projectId/videos/:videoId/generate-video/stream", async (req, res)
       return res.end();
     }
 
+    // Validate frames are available
+    if (!videoProject.first_frame_url || !videoProject.last_frame_url) {
+      sendEvent("error", { 
+        message: "Both first and last frames are required for video generation. Please generate both frames first." 
+      });
+      return res.end();
+    }
+
     // Update status to generating
     await supabase
       .from("video_projects")
       .update({ status: "video_generating" })
       .eq("id", videoId);
 
-    sendEvent("progress", { message: "Preparing video generation...", progress: 5 });
+    sendEvent("progress", { message: "Preparing Veo 3.1 video generation...", progress: 5 });
 
-    // Get the last frame URL from the video project
-    const { data: videoProjectWithFrame } = await supabase
-      .from("video_projects")
-      .select("last_frame_url")
-      .eq("id", videoId)
-      .eq("project_id", projectId)
-      .single();
-
-    if (!videoProjectWithFrame?.last_frame_url) {
-      sendEvent("error", { message: "Last frame not found. Please generate the last frame first." });
-      return res.end();
-    }
-
-    const lastFrameUrl = videoProjectWithFrame.last_frame_url;
-    sendEvent("progress", { message: "Using last frame for video generation...", progress: 10 });
+    const firstFrameUrl = videoProject.first_frame_url;
+    const lastFrameUrl = videoProject.last_frame_url;
     
-    const videoPrompt = "Smooth cinematic transition showing the factory production floor in action, professional lighting, dynamic camera movement";
+    sendEvent("progress", { message: "Using first and last frames for video transition...", progress: 10 });
+    
+    // Get custom prompt or use default
+    const videoPrompt = videoProject.prompt || 
+      "Smooth cinematic transition from opening shot to production floor. Professional factory tour video with dynamic camera movement, showing the journey through the facility. High quality industrial footage.";
 
-    sendEvent("progress", { message: "Creating video generation task...", progress: 15 });
+    sendEvent("progress", { message: "Creating Veo 3.1 video generation task...", progress: 15 });
 
-    // Step 1: Create generation task with Kie.ai using the last frame
+    // Create generation task with Kie.ai Veo 3.1 API using FIRST_AND_LAST_FRAMES_2_VIDEO mode
     const createTaskResponse = await axios.post(
-      "https://api.kie.ai/api/v1/jobs/createTask",
+      "https://api.kie.ai/api/v1/veo/generate",
       {
-        model: "hailuo/2-3-image-to-video-standard",
-        input: {
-          prompt: videoPrompt,
-          image_url: lastFrameUrl,
-          duration: "6", // 6 seconds
-          resolution: "1080P", // High quality
-        },
+        prompt: videoPrompt,
+        imageUrls: [firstFrameUrl, lastFrameUrl], // First frame and last frame
+        model: "veo3_fast", // Use veo3_fast for faster generation, or "veo3" for highest quality
+        generationType: "FIRST_AND_LAST_FRAMES_2_VIDEO", // Two-frame video generation
+        aspectRatio: "16:9", // Professional widescreen format
+        enableTranslation: true, // Auto-translate prompts to English
       },
       {
         headers: {
@@ -585,10 +627,18 @@ router.get("/:projectId/videos/:videoId/generate-video/stream", async (req, res)
     );
 
     if (createTaskResponse.data.code !== 200) {
-      throw new Error(createTaskResponse.data.msg || "Failed to create video generation task");
+      throw new Error(createTaskResponse.data.msg || "Failed to create Veo 3.1 video generation task");
     }
 
     const taskId = createTaskResponse.data.data.taskId;
+    
+    logger.info("Veo 3.1 task created", {
+      taskId,
+      videoId,
+      projectId,
+      model: "veo3_fast",
+      generationType: "FIRST_AND_LAST_FRAMES_2_VIDEO",
+    });
     
     // Store taskId in metadata for background polling
     await supabase
@@ -596,16 +646,18 @@ router.get("/:projectId/videos/:videoId/generate-video/stream", async (req, res)
       .update({
         metadata: {
           ...videoProject.metadata,
-          kie_task_id: taskId,
-          kie_task_created_at: new Date().toISOString(),
+          veo_task_id: taskId,
+          veo_task_created_at: new Date().toISOString(),
+          veo_model: "veo3_fast",
+          veo_generation_type: "FIRST_AND_LAST_FRAMES_2_VIDEO",
         },
       })
       .eq("id", videoId);
     
-    sendEvent("progress", { message: "Video generation task created, processing...", progress: 20 });
+    sendEvent("progress", { message: "Veo 3.1 video generation started, processing...", progress: 20 });
 
-    // Step 2: Poll for task status
-    const maxPollAttempts = 120; // 10 minutes max (5 second intervals)
+    // Poll for task status using the Veo API status endpoint
+    const maxPollAttempts = 180; // 15 minutes max (5 second intervals) - Veo can take longer
     let pollAttempts = 0;
     let videoUrl: string | null = null;
 
@@ -613,8 +665,9 @@ router.get("/:projectId/videos/:videoId/generate-video/stream", async (req, res)
       try {
         pollAttempts++;
 
+        // Use the Veo-specific status endpoint (different from Hailuo)
         const statusResponse = await axios.get(
-          `https://api.kie.ai/api/v1/jobs/recordInfo?taskId=${taskId}`,
+          `https://api.kie.ai/api/v1/veo/record-info?taskId=${taskId}`,
           {
             headers: {
               "Authorization": `Bearer ${kieApiKey}`,
@@ -623,35 +676,61 @@ router.get("/:projectId/videos/:videoId/generate-video/stream", async (req, res)
         );
 
         if (statusResponse.data.code !== 200) {
+          // Code 422 with "record is null" means task is still initializing
+          if (statusResponse.data.code === 422 && statusResponse.data.msg?.includes("record is null")) {
+            const progress = Math.min(20 + (pollAttempts * 0.3), 40);
+            sendEvent("progress", { 
+              message: "Veo 3.1 task initializing, please wait...", 
+              progress 
+            });
+            return; // Will retry on next poll
+          }
           clearInterval(pollInterval);
-          sendEvent("error", { message: statusResponse.data.msg || "Failed to check task status" });
+          sendEvent("error", { message: statusResponse.data.msg || "Failed to check Veo task status" });
           res.end();
           return;
         }
 
         const taskData = statusResponse.data.data;
-        const state = taskData.state;
-
-        // Update progress based on state
-        if (state === "waiting") {
-          const progress = Math.min(20 + (pollAttempts * 2), 80);
+        
+        // Handle null taskData - task might still be initializing
+        if (!taskData) {
+          const progress = Math.min(20 + (pollAttempts * 0.3), 40);
           sendEvent("progress", { 
-            message: "Video is being generated, please wait...", 
+            message: "Veo 3.1 task initializing, please wait...", 
             progress 
           });
-        } else if (state === "success") {
+          return; // Will retry on next poll
+        }
+
+        // Veo uses successFlag: 0 = Generating, 1 = Success, 2 = Failed, 3 = Generation Failed
+        const successFlag = taskData.successFlag;
+
+        // Update progress based on state
+        if (successFlag === 0) {
+          // Still generating
+          const progress = Math.min(20 + (pollAttempts * 0.5), 85);
+          sendEvent("progress", { 
+            message: "Veo 3.1 is generating your video, please wait...", 
+            progress 
+          });
+        } else if (successFlag === 1) {
+          // Success!
           clearInterval(pollInterval);
 
-          // Extract video URL from result
+          // Extract video URL from response
           try {
-            const resultJson = JSON.parse(taskData.resultJson);
-            if (resultJson.resultUrls && resultJson.resultUrls.length > 0) {
-              videoUrl = resultJson.resultUrls[0];
-            } else {
-              throw new Error("No video URL in result");
+            const response = taskData.response;
+            if (response?.resultUrls && response.resultUrls.length > 0) {
+              videoUrl = response.resultUrls[0];
+            }
+            
+            if (!videoUrl) {
+              throw new Error("No video URL in Veo result");
             }
           } catch (parseError) {
             clearInterval(pollInterval);
+            logger.error("Failed to parse Veo video result", { taskData, parseError });
             sendEvent("error", { message: "Failed to parse video result" });
             res.end();
             return;
@@ -663,24 +742,39 @@ router.get("/:projectId/videos/:videoId/generate-video/stream", async (req, res)
             .update({
               video_url: videoUrl,
               status: "completed",
+              metadata: {
+                ...videoProject.metadata,
+                veo_task_id: taskId,
+                veo_task_completed_at: new Date().toISOString(),
+                veo_fallback_used: taskData.fallbackFlag || false,
+              },
             })
             .eq("id", videoId);
 
           sendEvent("complete", {
-            message: "Video generation complete",
+            message: "Veo 3.1 video generation complete",
             videoUrl: videoUrl,
           });
 
           res.end();
-        } else if (state === "fail") {
+        } else if (successFlag === 2 || successFlag === 3) {
+          // Failed
           clearInterval(pollInterval);
-          const errorMsg = taskData.failMsg || "Video generation failed";
+          const errorMsg = taskData.errorMessage || "Veo video generation failed";
+          logger.error("Veo video generation failed", { taskData });
           sendEvent("error", { message: errorMsg });
           
           // Update status
           await supabase
             .from("video_projects")
-            .update({ status: "frames_ready" }) // Reset to frames_ready so user can retry
+            .update({ 
+              status: "frames_ready",
+              metadata: {
+                ...videoProject.metadata,
+                veo_task_error: errorMsg,
+                veo_task_error_code: taskData.errorCode,
+              },
+            })
             .eq("id", videoId);
           
           res.end();
@@ -698,7 +792,7 @@ router.get("/:projectId/videos/:videoId/generate-video/stream", async (req, res)
         }
       } catch (pollError: any) {
         clearInterval(pollInterval);
-        logger.error("Error polling video generation status", pollError);
+        logger.error("Error polling Veo video generation status", pollError);
         sendEvent("error", { message: pollError.message || "Error checking video generation status" });
         res.end();
       }
@@ -710,7 +804,7 @@ router.get("/:projectId/videos/:videoId/generate-video/stream", async (req, res)
     });
 
   } catch (error: any) {
-    logger.error("Error generating video", error);
+    logger.error("Error generating Veo video", error);
     sendEvent("error", { message: error.message || "Failed to generate video" });
     
     // Reset status on error

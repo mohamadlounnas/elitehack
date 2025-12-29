@@ -1,12 +1,24 @@
 /**
  * Elite Industrial PDF Report Generator
  * Medusa.js-inspired professional styling with section cover pages
+ * Uses embedded Unicode fonts for full character support (accents, symbols, etc.)
  */
 
-import { PDFDocument, rgb, StandardFonts, PDFPage, PDFFont, Color } from "pdf-lib";
+import { PDFDocument, rgb, PDFPage, PDFFont, Color } from "pdf-lib";
+import fontkit from "@pdf-lib/fontkit";
 import fs from "fs";
 import path from "path";
 import { logger } from "../utils/logger.js";
+import axios from "axios";
+
+// Font URLs - using Google Fonts CDN for Roboto (supports extended Latin + symbols)
+const FONT_URLS = {
+  regular: "https://fonts.gstatic.com/s/roboto/v30/KFOmCnqEu92Fr1Me5Q.ttf",
+  bold: "https://fonts.gstatic.com/s/roboto/v30/KFOlCnqEu92Fr1MmWUlvAw.ttf",
+};
+
+// Font cache to avoid re-downloading
+let fontCache: { regular?: Buffer; bold?: Buffer } = {};
 
 // Medusa.js Color Palette
 const COLORS = {
@@ -87,12 +99,47 @@ class ElitePDFGenerator {
     return rgb(r, g, b);
   }
 
+  /**
+   * Load and cache fonts for Unicode support
+   */
+  private async loadFonts(): Promise<{ regular: Buffer; bold: Buffer }> {
+    // Return cached fonts if available
+    if (fontCache.regular && fontCache.bold) {
+      return { regular: fontCache.regular, bold: fontCache.bold };
+    }
+
+    logger.info("Downloading Unicode fonts for PDF generation...");
+    
+    try {
+      // Download fonts in parallel
+      const [regularResponse, boldResponse] = await Promise.all([
+        axios.get(FONT_URLS.regular, { responseType: 'arraybuffer', timeout: 30000 }),
+        axios.get(FONT_URLS.bold, { responseType: 'arraybuffer', timeout: 30000 }),
+      ]);
+
+      fontCache.regular = Buffer.from(regularResponse.data);
+      fontCache.bold = Buffer.from(boldResponse.data);
+      
+      logger.info("Fonts downloaded and cached successfully");
+      return { regular: fontCache.regular, bold: fontCache.bold };
+    } catch (error) {
+      logger.error("Failed to download fonts", { error });
+      throw new Error("Failed to load fonts for PDF generation");
+    }
+  }
+
   async generateReport(data: ReportData): Promise<Buffer> {
     logger.info("Generating Elite Industrial PDF Report - Medusa.js Style");
     
     this.pdfDoc = await PDFDocument.create();
-    this.helvetica = await this.pdfDoc.embedFont(StandardFonts.Helvetica);
-    this.helveticaBold = await this.pdfDoc.embedFont(StandardFonts.HelveticaBold);
+    
+    // Register fontkit for custom font embedding (required for Unicode support)
+    this.pdfDoc.registerFontkit(fontkit);
+    
+    // Load and embed Unicode-compatible fonts
+    const fonts = await this.loadFonts();
+    this.helvetica = await this.pdfDoc.embedFont(fonts.regular);
+    this.helveticaBold = await this.pdfDoc.embedFont(fonts.bold);
 
     // Set brand colors from project (or use defaults)
     this.brandPrimaryColor = this.hexToRgb(data.project.primary_color || "#0F172A");

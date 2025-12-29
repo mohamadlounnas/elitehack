@@ -97,13 +97,17 @@ export function VideoGeneratorDrawer({
 
   const [title, setTitle] = useState(videoProject?.title || "Untitled Video");
   
-  // Prompt for last frame only
+  // Prompts for both frames (Veo 3.1 two-frame generation)
+  const [firstFramePrompt, setFirstFramePrompt] = useState(videoProject?.metadata?.first_frame_prompt || "");
   const [lastFramePrompt, setLastFramePrompt] = useState(videoProject?.metadata?.last_frame_prompt || "");
   
+  // Frame URLs
+  const [firstFrame, setFirstFrame] = useState<string | null>(videoProject?.first_frame_url || null);
   const [lastFrame, setLastFrame] = useState<string | null>(videoProject?.last_frame_url || null);
   const [videoUrl, setVideoUrl] = useState<string | null>(videoProject?.video_url || null);
   const [status, setStatus] = useState<VideoProject["status"]>(videoProject?.status || "draft");
   
+  const [isGeneratingFirstFrame, setIsGeneratingFirstFrame] = useState(false);
   const [isGeneratingLastFrame, setIsGeneratingLastFrame] = useState(false);
   const [isGeneratingVideo, setIsGeneratingVideo] = useState(false);
   const [generationProgress, setGenerationProgress] = useState("");
@@ -116,7 +120,9 @@ export function VideoGeneratorDrawer({
   useEffect(() => {
     if (videoProject) {
       setTitle(videoProject.title);
+      setFirstFramePrompt(videoProject.metadata?.first_frame_prompt || "");
       setLastFramePrompt(videoProject.metadata?.last_frame_prompt || "");
+      setFirstFrame(videoProject.first_frame_url);
       setLastFrame(videoProject.last_frame_url);
       setVideoUrl(videoProject.video_url);
       setStatus(videoProject.status);
@@ -125,7 +131,9 @@ export function VideoGeneratorDrawer({
     } else {
       // Reset for new video
       setTitle("Untitled Video");
+      setFirstFramePrompt("");
       setLastFramePrompt("");
+      setFirstFrame(null);
       setLastFrame(null);
       setVideoUrl(null);
       setStatus("draft");
@@ -135,16 +143,21 @@ export function VideoGeneratorDrawer({
     setError(null);
   }, [videoProject, isOpen]);
 
-  const handleGenerateFrame = async () => {
+  const handleGenerateFrame = async (frameType: "first" | "last") => {
     if (!projectId) return;
     
-    if (!lastFramePrompt.trim()) {
-      setError("Please enter a prompt for the frame");
+    const prompt = frameType === "first" ? firstFramePrompt : lastFramePrompt;
+    if (!prompt.trim()) {
+      setError(`Please enter a prompt for the ${frameType} frame`);
       return;
     }
 
     setError(null);
-    setIsGeneratingLastFrame(true);
+    if (frameType === "first") {
+      setIsGeneratingFirstFrame(true);
+    } else {
+      setIsGeneratingLastFrame(true);
+    }
 
     try {
       // Create video project if it doesn't exist yet
@@ -156,15 +169,16 @@ export function VideoGeneratorDrawer({
       }
 
       // Update metadata with prompt
+      const promptKey = frameType === "first" ? "first_frame_prompt" : "last_frame_prompt";
       await videoApi.updateVideo(projectId, currentVideoId, {
         metadata: {
           ...videoProject?.metadata,
-          last_frame_prompt: lastFramePrompt,
+          [promptKey]: prompt,
         }
       });
 
       const eventSource = new EventSource(
-        videoApi.getGenerateFramesStreamUrl(projectId, currentVideoId, "last")
+        videoApi.getGenerateFramesStreamUrl(projectId, currentVideoId, frameType)
       );
 
       eventSource.onmessage = (event) => {
@@ -173,38 +187,65 @@ export function VideoGeneratorDrawer({
         if (data.type === "progress") {
           setGenerationProgress(data.message);
         } else if (data.type === "frame_complete") {
-          setLastFrame(data.imageUrl);
-          setIsGeneratingLastFrame(false);
+          if (data.frame === "first") {
+            setFirstFrame(data.imageUrl);
+            setIsGeneratingFirstFrame(false);
+          } else {
+            setLastFrame(data.imageUrl);
+            setIsGeneratingLastFrame(false);
+          }
           setStatus("frames_ready");
           setHasChanges(true);
         } else if (data.type === "frame_error") {
-          setError(`Failed to generate frame: ${data.message}`);
-          setIsGeneratingLastFrame(false);
+          setError(`Failed to generate ${data.frame} frame: ${data.message}`);
+          if (frameType === "first") {
+            setIsGeneratingFirstFrame(false);
+          } else {
+            setIsGeneratingLastFrame(false);
+          }
         } else if (data.type === "complete") {
           setGenerationProgress("");
           eventSource.close();
         } else if (data.type === "error") {
           setError(data.message);
-          setIsGeneratingLastFrame(false);
+          if (frameType === "first") {
+            setIsGeneratingFirstFrame(false);
+          } else {
+            setIsGeneratingLastFrame(false);
+          }
           eventSource.close();
         }
       };
 
       eventSource.onerror = () => {
         setError("Connection lost. Please try again.");
-        setIsGeneratingLastFrame(false);
+        if (frameType === "first") {
+          setIsGeneratingFirstFrame(false);
+        } else {
+          setIsGeneratingLastFrame(false);
+        }
         setGenerationProgress("");
         eventSource.close();
       };
 
     } catch (err: any) {
       setError(err.message || "Failed to generate frame");
-      setIsGeneratingLastFrame(false);
+      if (frameType === "first") {
+        setIsGeneratingFirstFrame(false);
+      } else {
+        setIsGeneratingLastFrame(false);
+      }
     }
   };
 
   const handleGenerateVideo = async () => {
-    if (!projectId || !videoId || !lastFrame) return;
+    if (!projectId || !videoId) return;
+
+    // Veo 3.1 requires both frames for FIRST_AND_LAST_FRAMES_2_VIDEO mode
+    if (!firstFrame || !lastFrame) {
+      setError("Both first and last frames are required for video generation. Please generate both frames first.");
+      return;
+    }
 
     setIsGeneratingVideo(true);
     setError(null);
@@ -258,6 +299,7 @@ export function VideoGeneratorDrawer({
       const existingMetadata = videoProject?.metadata || {};
       const metadata = {
         ...existingMetadata,
+        first_frame_prompt: firstFramePrompt,
         last_frame_prompt: lastFramePrompt,
       };
 
@@ -265,6 +307,7 @@ export function VideoGeneratorDrawer({
         // Update existing
         savedVideo = await videoApi.updateVideo(projectId, videoId, {
           title,
+          first_frame_url: firstFrame,
           last_frame_url: lastFrame,
           video_url: videoUrl,
           status,
@@ -301,8 +344,9 @@ export function VideoGeneratorDrawer({
     }
   };
 
-  const isGenerating = isGeneratingLastFrame || isGeneratingVideo;
-  const canGenerateVideo = lastFrame && !isGenerating;
+  const isGenerating = isGeneratingFirstFrame || isGeneratingLastFrame || isGeneratingVideo;
+  // Veo 3.1 requires both frames for FIRST_AND_LAST_FRAMES_2_VIDEO mode
+  const canGenerateVideo = firstFrame && lastFrame && !isGenerating;
 
   if (!isOpen) return null;
 
@@ -355,167 +399,275 @@ export function VideoGeneratorDrawer({
           </div>
         </div>
 
-        {/* Body - Single Frame View */}
+        {/* Body - Two Frame View for Veo 3.1 */}
         <div className="flex-1 overflow-y-auto p-6">
-          <div className="max-w-3xl mx-auto space-y-6">
+          <div className="max-w-5xl mx-auto space-y-6">
             
-            {/* Frame Section */}
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Badge color="purple" size="small">Video Frame</Badge>
-                  <Text size="small" className="text-ui-fg-muted">Promotional Image</Text>
+            {/* Info Banner */}
+            <div className="bg-gradient-to-r from-purple-500/10 to-pink-500/10 border border-purple-500/20 rounded-xl p-4">
+              <div className="flex items-start gap-3">
+                <SparkleIcon className="w-5 h-5 text-purple-500 flex-shrink-0 mt-0.5" />
+                <div>
+                  <Text weight="plus" className="text-purple-700 dark:text-purple-300">Veo 3.1 Two-Frame Video Generation</Text>
+                  <Text size="small" className="text-ui-fg-muted mt-1">
+                    Create a cinematic video transition from your first frame (opening shot) to your last frame (closing shot). 
+                    The AI will generate smooth motion between both frames.
+                  </Text>
+                </div>
+              </div>
+            </div>
+
+            {/* Two Frames Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              
+              {/* First Frame Section */}
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Badge color="blue" size="small">1. First Frame</Badge>
+                    <Text size="small" className="text-ui-fg-muted">Opening Shot</Text>
+                  </div>
+                </div>
+
+                {/* Image Area */}
+                <div className="aspect-video rounded-xl border border-ui-border-base bg-ui-bg-subtle flex items-center justify-center relative overflow-hidden group">
+                  {isGeneratingFirstFrame ? (
+                    <div className="text-center p-4">
+                      <div className="w-10 h-10 mx-auto mb-3 rounded-full border-4 border-ui-border-base border-t-blue-500 animate-spin" />
+                      <Text size="small" className="text-ui-fg-subtle">Generating first frame...</Text>
+                    </div>
+                  ) : firstFrame ? (
+                    <>
+                      <img 
+                        src={getImageUrl(firstFrame) || ""} 
+                        alt="First Frame" 
+                        className="w-full h-full object-contain"
+                      />
+                      <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                        <Button
+                          variant="secondary"
+                          onClick={() => handleGenerateFrame("first")}
+                          disabled={isGenerating}
+                          className="gap-2"
+                        >
+                          <RefreshIcon className="w-4 h-4" />
+                          Regenerate
+                        </Button>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="text-center p-6">
+                      <Photo className="w-12 h-12 text-ui-fg-muted mx-auto mb-2 opacity-50" />
+                      <Text className="text-ui-fg-muted">No first frame generated</Text>
+                    </div>
+                  )}
+                </div>
+
+                {/* Prompt Input */}
+                <div className="space-y-2">
+                  <Text size="small" weight="plus" className="text-ui-fg-subtle">
+                    First Frame Prompt
+                  </Text>
+                  <Textarea
+                    value={firstFramePrompt}
+                    onChange={(e) => {
+                      setFirstFramePrompt(e.target.value);
+                      setHasChanges(true);
+                    }}
+                    placeholder="Describe the opening shot... (e.g., 'Factory exterior at sunrise, modern industrial building, professional corporate entrance')"
+                    rows={3}
+                    className="resize-none"
+                  />
+                  <Button 
+                    variant="secondary" 
+                    className="w-full mt-2"
+                    onClick={() => handleGenerateFrame("first")}
+                    disabled={isGenerating || !firstFramePrompt.trim()}
+                  >
+                    <Sparkles className="w-4 h-4 mr-2" />
+                    Generate First Frame
+                  </Button>
                 </div>
               </div>
 
-              {/* Image Area */}
-              <div className="aspect-video rounded-xl border border-ui-border-base bg-ui-bg-subtle flex items-center justify-center relative overflow-hidden group">
-                {isGeneratingLastFrame ? (
-                  <div className="text-center p-4">
-                    <div className="w-10 h-10 mx-auto mb-3 rounded-full border-4 border-ui-border-base border-t-purple-500 animate-spin" />
-                    <Text size="small" className="text-ui-fg-subtle">Generating...</Text>
+              {/* Last Frame Section */}
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Badge color="purple" size="small">2. Last Frame</Badge>
+                    <Text size="small" className="text-ui-fg-muted">Closing Shot</Text>
                   </div>
-                ) : lastFrame ? (
-                  <>
-                    <img 
-                      src={getImageUrl(lastFrame) || ""} 
-                      alt="Video Frame" 
-                      className="w-full h-full object-contain"
-                    />
-                    <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                      <Button
-                        variant="secondary"
-                        onClick={handleGenerateFrame}
-                        disabled={isGenerating}
-                        className="gap-2"
-                      >
-                        <RefreshIcon className="w-4 h-4" />
-                        Regenerate
-                      </Button>
+                </div>
+
+                {/* Image Area */}
+                <div className="aspect-video rounded-xl border border-ui-border-base bg-ui-bg-subtle flex items-center justify-center relative overflow-hidden group">
+                  {isGeneratingLastFrame ? (
+                    <div className="text-center p-4">
+                      <div className="w-10 h-10 mx-auto mb-3 rounded-full border-4 border-ui-border-base border-t-purple-500 animate-spin" />
+                      <Text size="small" className="text-ui-fg-subtle">Generating last frame...</Text>
                     </div>
-                  </>
-                ) : (
-                  <div className="text-center p-6">
-                    <Photo className="w-12 h-12 text-ui-fg-muted mx-auto mb-2 opacity-50" />
-                    <Text className="text-ui-fg-muted">No frame generated</Text>
-                  </div>
-                )}
+                  ) : lastFrame ? (
+                    <>
+                      <img 
+                        src={getImageUrl(lastFrame) || ""} 
+                        alt="Last Frame" 
+                        className="w-full h-full object-contain"
+                      />
+                      <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                        <Button
+                          variant="secondary"
+                          onClick={() => handleGenerateFrame("last")}
+                          disabled={isGenerating}
+                          className="gap-2"
+                        >
+                          <RefreshIcon className="w-4 h-4" />
+                          Regenerate
+                        </Button>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="text-center p-6">
+                      <Photo className="w-12 h-12 text-ui-fg-muted mx-auto mb-2 opacity-50" />
+                      <Text className="text-ui-fg-muted">No last frame generated</Text>
+                    </div>
+                  )}
+                </div>
+
+                {/* Prompt Input */}
+                <div className="space-y-2">
+                  <Text size="small" weight="plus" className="text-ui-fg-subtle">
+                    Last Frame Prompt
+                  </Text>
+                  <Textarea
+                    value={lastFramePrompt}
+                    onChange={(e) => {
+                      setLastFramePrompt(e.target.value);
+                      setHasChanges(true);
+                    }}
+                    placeholder="Describe the closing shot... (e.g., 'Busy production floor with workers and machinery in action, golden hour lighting, sense of accomplishment')"
+                    rows={3}
+                    className="resize-none"
+                  />
+                  <Button 
+                    variant="secondary" 
+                    className="w-full mt-2"
+                    onClick={() => handleGenerateFrame("last")}
+                    disabled={isGenerating || !lastFramePrompt.trim()}
+                  >
+                    <Sparkles className="w-4 h-4 mr-2" />
+                    Generate Last Frame
+                  </Button>
+                </div>
               </div>
 
-              {/* Prompt Input */}
-              <div className="space-y-2">
-                <Text size="small" weight="plus" className="text-ui-fg-subtle">
-                  Prompt
-                </Text>
-                <Textarea
-                  value={lastFramePrompt}
-                  onChange={(e) => {
-                    setLastFramePrompt(e.target.value);
-                    setHasChanges(true);
-                  }}
-                  placeholder="Describe the scene... (e.g., 'Busy production floor with workers and machinery in action, professional lighting')"
-                  rows={3}
-                  className="resize-none"
-                />
-                <Button 
-                  variant="secondary" 
-                  className="w-full mt-2"
-                  onClick={handleGenerateFrame}
-                  disabled={isGenerating || !lastFramePrompt.trim()}
-                >
-                  <Sparkles className="w-4 h-4 mr-2" />
-                  Generate Frame
-                </Button>
-              </div>
             </div>
 
           </div>
 
           {/* Video Generation Section */}
           <div className="mt-8 pt-8 border-t border-ui-border-base">
-            {lastFrame && (
-              <div className="rounded-xl border-2 border-dashed border-ui-border-strong p-6 bg-gradient-to-br from-ui-bg-subtle to-ui-bg-base">
-                {videoUrl ? (
-                  <div className="flex flex-col md:flex-row gap-6 items-center">
-                    <div className="w-full md:w-1/2 rounded-lg overflow-hidden border border-ui-border-base shadow-lg">
-                      <video 
-                        src={videoUrl} 
-                        controls 
-                        className="w-full"
-                        poster={getImageUrl(lastFrame) || undefined}
-                      />
-                    </div>
-                    <div className="w-full md:w-1/2 space-y-4">
-                      <div className="flex items-center gap-2">
-                        <Badge color="green">
-                          <SparkleIcon className="w-3 h-3 mr-1" />
-                          Video Generated Successfully
-                        </Badge>
-                      </div>
-                      <Text className="text-ui-fg-subtle">
-                        Your professional factory video is ready. You can download it or regenerate to try a different style.
-                      </Text>
-                      <div className="flex flex-wrap gap-3">
-                        <Button
-                          variant="secondary"
-                          onClick={() => {
-                            const link = document.createElement("a");
-                            link.href = videoUrl;
-                            link.download = `${title.replace(/\s+/g, "_")}.mp4`;
-                            link.click();
-                          }}
-                          className="gap-2"
-                        >
-                          <ArrowDownTray className="w-4 h-4" />
-                          Download MP4
-                        </Button>
-                        <Button
-                          variant="secondary"
-                          onClick={() => {
-                            setVideoUrl(null);
-                            setStatus("frames_ready");
-                          }}
-                          className="gap-2"
-                        >
-                          <RefreshIcon className="w-4 h-4" />
-                          Regenerate Video
-                        </Button>
-                      </div>
-                    </div>
+            <div className="rounded-xl border-2 border-dashed border-ui-border-strong p-6 bg-gradient-to-br from-ui-bg-subtle to-ui-bg-base">
+              {videoUrl ? (
+                <div className="flex flex-col md:flex-row gap-6 items-center">
+                  <div className="w-full md:w-1/2 rounded-lg overflow-hidden border border-ui-border-base shadow-lg">
+                    <video 
+                      src={videoUrl} 
+                      controls 
+                      className="w-full"
+                      poster={getImageUrl(firstFrame) || getImageUrl(lastFrame) || undefined}
+                    />
                   </div>
-                ) : isGeneratingVideo ? (
-                  <div className="text-center py-8">
-                    <div className="relative w-16 h-16 mx-auto mb-4">
-                      <div className="absolute inset-0 rounded-full bg-gradient-to-r from-pink-500 via-purple-500 to-rose-500 animate-spin" style={{ animationDuration: "2s" }} />
-                      <div className="absolute inset-1 rounded-full bg-ui-bg-base flex items-center justify-center">
-                        <FilmIcon className="w-6 h-6 text-pink-500" />
-                      </div>
+                  <div className="w-full md:w-1/2 space-y-4">
+                    <div className="flex items-center gap-2">
+                      <Badge color="green">
+                        <SparkleIcon className="w-3 h-3 mr-1" />
+                        Video Generated Successfully
+                      </Badge>
                     </div>
-                    <Text weight="plus" className="mb-1">Generating Video</Text>
-                    <Text size="small" className="text-ui-fg-subtle">{generationProgress || "Creating video from frame..."}</Text>
-                  </div>
-                ) : (
-                  <div className="text-center py-4">
-                    <Text weight="plus" className="mb-1 block">
-                      {canGenerateVideo ? "Ready to Generate Video" : "Generate Frame First"}
+                    <Text className="text-ui-fg-subtle">
+                      Your professional Veo 3.1 factory video is ready. The AI created a smooth transition between your two frames. 
+                      You can download it or regenerate to try a different style.
                     </Text>
-                    <Text size="small" className="text-ui-fg-subtle mb-4 block">
-                      Create an AI-generated video from your frame
-                    </Text>
-                    <Button
-                      variant="primary"
-                      size="large"
-                      onClick={handleGenerateVideo}
-                      disabled={!canGenerateVideo}
-                      className="gap-2 px-8"
-                    >
-                      <PlayIcon className="w-4 h-4" />
-                      Generate Video
-                    </Button>
+                    <div className="flex flex-wrap gap-3">
+                      <Button
+                        variant="secondary"
+                        onClick={() => {
+                          const link = document.createElement("a");
+                          link.href = videoUrl;
+                          link.download = `${title.replace(/\s+/g, "_")}.mp4`;
+                          link.click();
+                        }}
+                        className="gap-2"
+                      >
+                        <ArrowDownTray className="w-4 h-4" />
+                        Download MP4
+                      </Button>
+                      <Button
+                        variant="secondary"
+                        onClick={() => {
+                          setVideoUrl(null);
+                          setStatus("frames_ready");
+                        }}
+                        className="gap-2"
+                      >
+                        <RefreshIcon className="w-4 h-4" />
+                        Regenerate Video
+                      </Button>
+                    </div>
                   </div>
-                )}
-              </div>
-            )}
+                </div>
+              ) : isGeneratingVideo ? (
+                <div className="text-center py-8">
+                  <div className="relative w-16 h-16 mx-auto mb-4">
+                    <div className="absolute inset-0 rounded-full bg-gradient-to-r from-pink-500 via-purple-500 to-rose-500 animate-spin" style={{ animationDuration: "2s" }} />
+                    <div className="absolute inset-1 rounded-full bg-ui-bg-base flex items-center justify-center">
+                      <FilmIcon className="w-6 h-6 text-pink-500" />
+                    </div>
+                  </div>
+                  <Text weight="plus" className="mb-1">Generating Veo 3.1 Video</Text>
+                  <Text size="small" className="text-ui-fg-subtle">{generationProgress || "Creating cinematic transition between frames..."}</Text>
+                </div>
+              ) : (
+                <div className="text-center py-4">
+                  <Text weight="plus" className="mb-1 block">
+                    {canGenerateVideo ? "Ready to Generate Video" : "Generate Both Frames First"}
+                  </Text>
+                  <Text size="small" className="text-ui-fg-subtle mb-4 block">
+                    {canGenerateVideo 
+                      ? "Create a Veo 3.1 cinematic video transitioning from your first frame to your last frame"
+                      : "You need both the first frame (opening) and last frame (closing) to generate a video"
+                    }
+                  </Text>
+                  {/* Frame Status Indicators */}
+                  {(!firstFrame || !lastFrame) && (
+                    <div className="flex justify-center gap-4 mb-4">
+                      <div className={clx(
+                        "flex items-center gap-2 px-3 py-1.5 rounded-full text-sm",
+                        firstFrame ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500"
+                      )}>
+                        {firstFrame ? "✓" : "○"} First Frame
+                      </div>
+                      <div className={clx(
+                        "flex items-center gap-2 px-3 py-1.5 rounded-full text-sm",
+                        lastFrame ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500"
+                      )}>
+                        {lastFrame ? "✓" : "○"} Last Frame
+                      </div>
+                    </div>
+                  )}
+                  <Button
+                    variant="primary"
+                    size="large"
+                    onClick={handleGenerateVideo}
+                    disabled={!canGenerateVideo}
+                    className="gap-2 px-8"
+                  >
+                    <PlayIcon className="w-4 h-4" />
+                    Generate Veo 3.1 Video
+                  </Button>
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Error Message */}
