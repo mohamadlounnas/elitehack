@@ -16,6 +16,7 @@ export type ProjectStep =
   | "negotiating"
   | "cost_analysing"
   | "layoutGenerating"
+  | "3dGenerating"
   | "completed";
 
 /**
@@ -45,7 +46,8 @@ class StepOrchestrator {
     sourcing: "negotiating",
     negotiating: "cost_analysing",
     cost_analysing: "layoutGenerating",
-    layoutGenerating: "completed",
+    layoutGenerating: "3dGenerating",
+    "3dGenerating": "completed",
     completed: null,
   };
 
@@ -64,6 +66,7 @@ class StepOrchestrator {
       "negotiating",
       "cost_analysing",
       "layoutGenerating",
+      "3dGenerating",
       "completed",
     ];
   }
@@ -219,7 +222,8 @@ class StepOrchestrator {
         "assetsImagesGenerating",
         "sourcing",
         "layoutGenerating",
-        "cost_analysing"
+        "cost_analysing",
+        "3dGenerating"
       ];
       
       // Interactive steps that require user input - don't auto-execute
@@ -331,6 +335,15 @@ class StepOrchestrator {
           }
           break;
 
+        case "3dGenerating":
+          logger.info("Starting 3D model generation step", { projectId });
+          // Trigger 3D generation - fire and forget, don't wait for completion
+          this.trigger3DGeneration(projectId).catch((error) => {
+            logger.error("Error triggering 3D generation", error, { projectId });
+            // Don't throw - we want to move forward even if this fails
+          });
+          break;
+
         case "assetSelection":
           // Asset selection is handled by the frontend - user picks which assets to process
           // No automatic execution needed, user will click "Continue" when done
@@ -350,6 +363,72 @@ class StepOrchestrator {
       // Always release lock
       this.executingProjects.delete(projectId);
       this.executingSteps.delete(projectId);
+    }
+  }
+
+  /**
+   * Triggers 3D model generation for a project (fire and forget)
+   */
+  private async trigger3DGeneration(projectId: string): Promise<void> {
+    try {
+      // Lazy import to avoid module loading issues
+      const { meshy3dService } = await import("./meshy3dService.js");
+
+      // Get the project
+      const { data: project, error: projectError } = await supabase
+        .from("projects")
+        .select("*")
+        .eq("id", projectId)
+        .single();
+
+      if (projectError || !project) {
+        logger.error("Project not found for 3D generation", projectError, { projectId });
+        return;
+      }
+
+      // Check if already started
+      if (project.meshy_id) {
+        logger.info("3D generation already started", { projectId, meshy_id: project.meshy_id });
+        return;
+      }
+
+      // Get isometric layout
+      const { data: isometricFile, error: fileError } = await supabase
+        .from("generated_files")
+        .select("*")
+        .eq("project_id", projectId)
+        .eq("metadata->>layout_type", "isometric")
+        .limit(1)
+        .maybeSingle();
+
+      if (fileError || !isometricFile) {
+        logger.warn("Isometric layout not found for 3D generation", fileError, { projectId });
+        return;
+      }
+
+      const imageUrl = isometricFile.file_path || isometricFile.storage_url;
+      if (!imageUrl) {
+        logger.warn("Isometric layout image not available", { projectId });
+        return;
+      }
+
+      // Create Meshy3D task
+      const taskId = await meshy3dService.createTask(imageUrl);
+
+      // Update project with meshy_id
+      const { error: updateError } = await supabase
+        .from("projects")
+        .update({ meshy_id: taskId })
+        .eq("id", projectId);
+
+      if (updateError) {
+        logger.error("Error updating project with meshy_id", updateError, { projectId, taskId });
+      } else {
+        logger.info("3D model generation task created", { projectId, taskId });
+      }
+    } catch (error: any) {
+      logger.error("Error in trigger3DGeneration", error, { projectId });
+      // Don't throw - this is fire and forget
     }
   }
 }

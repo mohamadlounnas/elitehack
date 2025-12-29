@@ -24,6 +24,9 @@ CREATE TABLE IF NOT EXISTS projects (
     secondary_color VARCHAR(7),
     brand_identity JSONB DEFAULT '{}'::jsonb,
     metadata JSONB DEFAULT '{}'::jsonb,
+    -- 3D Model fields
+    meshy_id TEXT,
+    model_url TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -95,6 +98,9 @@ CREATE TABLE IF NOT EXISTS assets (
     image_generated BOOLEAN DEFAULT FALSE,
     image_url TEXT,
     selected_for_processing BOOLEAN DEFAULT TRUE,
+    -- 3D Model fields
+    meshy_id TEXT,
+    model_url TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -207,7 +213,11 @@ CREATE TRIGGER update_assets_updated_at
 -- Comments for Documentation
 -- ===========================================
 COMMENT ON TABLE projects IS 'Main projects table storing factory planning projects';
-COMMENT ON COLUMN projects.current_step IS 'Current step in the workflow: chat, planning, identityGenerating, assetsImagesGenerating, sourcing, negotiating, cost_analysing, layoutGenerating, completed';
+COMMENT ON COLUMN projects.current_step IS 'Current step in the workflow: chat, planning, identityGenerating, assetsImagesGenerating, sourcing, negotiating, cost_analysing, layoutGenerating, 3dGenerating, completed';
+COMMENT ON COLUMN projects.meshy_id IS 'Task ID from Meshy3D API for tracking 3D model generation from isometric layout';
+COMMENT ON COLUMN projects.model_url IS 'URL to the generated 3D model GLB file from Meshy3D';
+COMMENT ON COLUMN assets.meshy_id IS 'Task ID from Meshy3D API for tracking 3D model generation';
+COMMENT ON COLUMN assets.model_url IS 'URL to the generated 3D model GLB file from Meshy3D';
 COMMENT ON COLUMN projects.planning_data IS 'JSON data containing the AI-generated factory plan';
 COMMENT ON COLUMN projects.logo_url IS 'URL or data URL of the generated brand logo';
 COMMENT ON COLUMN projects.primary_color IS 'Primary brand color in hex format (e.g., #0F172A)';

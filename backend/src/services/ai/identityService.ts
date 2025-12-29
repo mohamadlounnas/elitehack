@@ -162,7 +162,7 @@ class IdentityService {
     background: string;
     text: string;
   }> {
-    const model = this.genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+    const model = this.genAI.getGenerativeModel({ model: "gemini-3-pro-preview" });
 
     const prompt = `You are a professional brand designer. Generate a sophisticated, industrial color palette for:
 
@@ -228,7 +228,7 @@ Return ONLY a valid JSON object (no markdown, no explanation):
   ): Promise<{ logoUrl: string; logoSvg?: string; concept: string; tagline: string }> {
     try {
       // Use Gemini to generate logo concept and SVG
-      const model = this.genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+      const model = this.genAI.getGenerativeModel({ model: "gemini-3-pro-preview" });
       
       // Get industry-specific icon suggestions
       const industryIcons = this.getIndustryIconSuggestions(category);

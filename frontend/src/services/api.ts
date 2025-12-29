@@ -148,6 +148,22 @@ export const dataApi = {
   getFullReportDownloadUrl: (projectId: string) => {
     return `${API_BASE_URL}/projects/${projectId}/full-report-pdf`;
   },
+
+  generate3DModel: async (projectId: string): Promise<{ success: boolean; meshy_id: string }> => {
+    const { data } = await api.post<{ success: boolean; meshy_id: string }>(
+      `/projects/${projectId}/generate-3d-model`
+    );
+    return data;
+  },
+
+  check3DStatus: async (
+    projectId: string
+  ): Promise<{ status: string; progress: number; model_url?: string | null }> => {
+    const { data } = await api.get<{ status: string; progress: number; model_url?: string | null }>(
+      `/projects/${projectId}/check-3d-status`
+    );
+    return data;
+  },
 };
 
 export const videoApi = {

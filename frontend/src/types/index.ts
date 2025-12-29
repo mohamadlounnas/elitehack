@@ -8,6 +8,7 @@ export type ProjectStep =
   | "negotiating"
   | "cost_analysing"
   | "layoutGenerating"
+  | "3dGenerating"
   | "completed";
 
 export interface BrandIdentity {
@@ -42,6 +43,8 @@ export interface Project {
   secondary_color?: string;
   brand_identity?: BrandIdentity;
   planning_data?: PlanningData;
+  meshy_id?: string | null;
+  model_url?: string | null;
   created_at: string;
   updated_at: string;
 }

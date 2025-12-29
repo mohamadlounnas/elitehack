@@ -19,7 +19,7 @@ export const createLLM = () => {
     throw new Error("GEMINI_API_KEY is not configured");
   }
   return new ChatGoogleGenerativeAI({
-    model: "models/gemini-3-flash-preview",
+    model: "models/gemini-3-pro-preview",
     temperature: 0.7,
     apiKey: geminiApiKey,
   });
@@ -35,7 +35,7 @@ export const createNanoLLM = () => {
     throw new Error("GEMINI_API_KEY is not configured");
   }
   return new ChatGoogleGenerativeAI({
-    model: "models/gemini-2.5-flash",
+    model: "models/gemini-3-pro-preview",
     temperature: 0.5,
     apiKey: geminiApiKey,
   });
@@ -50,7 +50,7 @@ export const createImageLLM = () => {
     throw new Error("GEMINI_API_KEY is not configured");
   }
   return new ChatGoogleGenerativeAI({
-    model: "models/gemini-2.5-flash-image",
+    model: "models/gemini-3-pro-image-preview",
     temperature: 0.5,
     apiKey: geminiApiKey,
   });

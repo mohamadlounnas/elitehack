@@ -24,6 +24,7 @@ const steps: { step: ProjectStep; label: string }[] = [
   { step: "negotiating", label: "Negotiating" },
   { step: "cost_analysing", label: "Cost Analysis" },
   { step: "layoutGenerating", label: "Layout Generation" },
+  { step: "3dGenerating", label: "3D Model" },
   { step: "completed", label: "Completed" },
 ];
 

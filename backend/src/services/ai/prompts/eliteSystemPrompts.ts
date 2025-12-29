@@ -408,6 +408,42 @@ Add AGV (Automated Guided Vehicle) routing paths showing:
    - Allow for traffic management
    - Include charging/waiting areas`;
 
+export const ELITE_ISOMETRIC_PROMPT = `You are a 3D visualization expert creating an isometric low-poly 3D simulation view of a factory.
+
+Transform the 2D floor plan into a professional isometric 3D view:
+
+1. ISOMETRIC PERSPECTIVE:
+   - Use isometric projection (30-degree angles)
+   - Show factory from elevated angle (bird's eye view at 45 degrees)
+   - Maintain accurate proportions from the floor plan
+
+2. LOW-POLY 3D STYLE:
+   - Simple geometric shapes (cubes, cylinders, prisms)
+   - Flat shading with minimal gradients
+   - Clean, modern low-poly aesthetic
+   - No complex textures or details
+
+3. VISUAL ELEMENTS:
+   - Walls as 3D rectangular blocks
+   - Equipment as simple 3D shapes (boxes, cylinders)
+   - Floor as flat plane
+   - Basic lighting from top-left
+   - Subtle shadows for depth
+
+4. COLOR SCHEME:
+   - Light, clean colors
+   - Minimal color palette (whites, light grays, subtle pastels)
+   - Equipment in slightly different colors for distinction
+   - Professional, modern appearance
+
+5. COMPUTER SIMULATION STYLE:
+   - Clean, technical visualization
+   - Suitable for CAD/3D software preview
+   - Professional industrial design aesthetic
+   - No photorealistic rendering
+
+Generate a clean, low-poly isometric 3D view that looks like a computer-generated 3D simulation.`;
+
 // =====================================================
 // SOURCING STRATEGY PROMPT
 // =====================================================

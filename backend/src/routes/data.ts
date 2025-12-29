@@ -916,7 +916,7 @@ Create a PURE photorealistic 3D interior visualization as if photographed by a p
 
     // Use Gemini 2.5 Flash Image model (same as imageGenerationService)
     const model = genAI.getGenerativeModel({
-      model: "models/gemini-2.5-flash-image",
+      model: "models/gemini-3-pro-image-preview",
     });
 
     sendEvent("progress", { message: "Rendering factory visualization..." });
@@ -982,6 +982,154 @@ Create a PURE photorealistic 3D interior visualization as if photographed by a p
     sendEvent("error", { message: error.message || "Failed to generate realistic view" });
   } finally {
     res.end();
+  }
+});
+
+/**
+ * POST /projects/:id/generate-3d-model
+ * Generate a 3D model for the project using Meshy3D API from isometric layout
+ */
+router.post("/:id/generate-3d-model", async (req, res) => {
+  try {
+    // Lazy import to avoid module loading issues
+    const { meshy3dService } = await import("../services/meshy3dService.js");
+    
+    const { id: projectId } = req.params;
+
+    logger.info("Generating 3D model for project", { projectId });
+
+    // Get the project
+    const { data: project, error: projectError } = await supabase
+      .from("projects")
+      .select("*")
+      .eq("id", projectId)
+      .single();
+
+    if (projectError || !project) {
+      logger.error("Project not found", projectError, { projectId });
+      return res.status(404).json({ error: "Project not found" });
+    }
+
+    // Check if task already exists
+    if (project.meshy_id) {
+      return res.status(400).json({ 
+        error: "3D model generation already in progress",
+        meshy_id: project.meshy_id 
+      });
+    }
+
+    // Get isometric layout from generated files
+    const { data: isometricFile, error: fileError } = await supabase
+      .from("generated_files")
+      .select("*")
+      .eq("project_id", projectId)
+      .eq("metadata->>layout_type", "isometric")
+      .limit(1)
+      .maybeSingle();
+
+    if (fileError || !isometricFile) {
+      logger.error("Isometric layout not found", fileError, { projectId });
+      return res.status(404).json({ error: "Isometric layout not found. Please generate layouts first." });
+    }
+
+    const imageUrl = isometricFile.file_path || isometricFile.storage_url;
+    if (!imageUrl) {
+      return res.status(400).json({ error: "Isometric layout image not available" });
+    }
+
+    // Create Meshy3D task
+    const taskId = await meshy3dService.createTask(imageUrl);
+
+    // Update project with meshy_id
+    const { error: updateError } = await supabase
+      .from("projects")
+      .update({ meshy_id: taskId })
+      .eq("id", projectId);
+
+    if (updateError) {
+      logger.error("Error updating project with meshy_id", updateError, { projectId, taskId });
+      return res.status(500).json({ error: "Failed to save task ID" });
+    }
+
+    logger.info("3D model generation task created", { projectId, taskId });
+    res.json({ success: true, meshy_id: taskId });
+  } catch (error: any) {
+    logger.error("Error in POST /projects/:id/generate-3d-model", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /projects/:id/check-3d-status
+ * Check the status of 3D model generation for the project
+ */
+router.get("/:id/check-3d-status", async (req, res) => {
+  try {
+    // Lazy import to avoid module loading issues
+    const { meshy3dService } = await import("../services/meshy3dService.js");
+    
+    const { id: projectId } = req.params;
+
+    // Get the project
+    const { data: project, error: projectError } = await supabase
+      .from("projects")
+      .select("*")
+      .eq("id", projectId)
+      .single();
+
+    if (projectError || !project) {
+      logger.error("Project not found", projectError, { projectId });
+      return res.status(404).json({ error: "Project not found" });
+    }
+
+    if (!project.meshy_id) {
+      return res.status(400).json({ error: "No 3D model generation task found for this project" });
+    }
+
+    // Check status with Meshy3D
+    const status = await meshy3dService.checkStatus(project.meshy_id);
+
+    // If succeeded, save model URL to project
+    if (status.status === "SUCCEEDED") {
+      const glbUrl = status.model_urls?.glb || status.model_url;
+      
+      if (glbUrl && !project.model_url) {
+        // Update project with model URL
+        const { error: updateError } = await supabase
+          .from("projects")
+          .update({ model_url: glbUrl })
+          .eq("id", projectId);
+
+        if (updateError) {
+          logger.error("Error updating project with model_url", updateError, { projectId });
+        } else {
+          logger.info("Project 3D model URL saved", { projectId, modelUrl: glbUrl });
+        }
+
+        return res.json({
+          status: "SUCCEEDED",
+          progress: 100,
+          model_url: glbUrl,
+        });
+      } else if (project.model_url) {
+        // Already saved
+        return res.json({
+          status: "SUCCEEDED",
+          progress: 100,
+          model_url: project.model_url,
+        });
+      }
+    }
+
+    // Return status
+    res.json({
+      status: status.status,
+      progress: status.progress || 0,
+      model_url: project.model_url || null,
+    });
+  } catch (error: any) {
+    logger.error("Error in GET /projects/:id/check-3d-status", error);
+    res.status(500).json({ error: error.message });
   }
 });
 

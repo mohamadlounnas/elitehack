@@ -264,7 +264,7 @@ Key Equipment: ${assets.map((a: any) => a.name).join(", ")}
     `.trim();
 
     const model = genAI.getGenerativeModel({
-      model: "models/gemini-2.5-flash-image",
+      model: "models/gemini-3-pro-image-preview",
     });
 
     // Helper function to save image to Supabase Storage and return public URL

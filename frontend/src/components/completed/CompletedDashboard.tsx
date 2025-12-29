@@ -43,7 +43,7 @@ import { FullReportDrawer } from "./FullReportDrawer";
 import { AssetDetailDrawer } from "./AssetDetailDrawer";
 import { FloorPlanDrawer } from "./FloorPlanDrawer";
 import { VideoGeneratorDrawer } from "./VideoGeneratorDrawer";
-import { videoApi, assetsApi } from "../../services/api";
+import { videoApi, assetsApi, dataApi } from "../../services/api";
 import {
   PieChart,
   Pie,
@@ -295,10 +295,19 @@ export function CompletedDashboard({
   const [selectedVideoProject, setSelectedVideoProject] = useState<VideoProject | null>(null);
   const [isLoadingVideos, setIsLoadingVideos] = useState(true);
 
-  // 3D model generation state
+  // 3D model generation state (for assets)
   const [generating3DModels, setGenerating3DModels] = useState<Set<string>>(new Set());
   const [checking3DStatus, setChecking3DStatus] = useState<Set<string>>(new Set());
   const [modelProgress, setModelProgress] = useState<Map<string, number>>(new Map());
+
+  // Project 3D model state
+  const [project3DStatus, setProject3DStatus] = useState<{
+    status: string;
+    progress: number;
+    model_url?: string | null;
+  } | null>(null);
+  const [checkingProject3D, setCheckingProject3D] = useState(false);
+  const [generatingProject3D, setGeneratingProject3D] = useState(false);
 
   // Fetch video projects on mount
   useEffect(() => {
@@ -314,6 +323,85 @@ export function CompletedDashboard({
     };
     fetchVideos();
   }, [project.id]);
+
+  // Check project 3D status on mount and periodically if in progress
+  useEffect(() => {
+    const checkProject3DStatus = async () => {
+      if (!project.meshy_id && !project.model_url) {
+        setProject3DStatus(null);
+        return;
+      }
+
+      if (project.model_url) {
+        setProject3DStatus({
+          status: "SUCCEEDED",
+          progress: 100,
+          model_url: project.model_url,
+        });
+        return;
+      }
+
+      if (project.meshy_id) {
+        setCheckingProject3D(true);
+        try {
+          const status = await dataApi.check3DStatus(project.id);
+          setProject3DStatus(status);
+          
+          // If completed, refresh project data
+          if (status.status === "SUCCEEDED" && status.model_url && onProjectUpdate) {
+            onProjectUpdate();
+          }
+        } catch (error) {
+          console.error("Failed to check project 3D status:", error);
+        } finally {
+          setCheckingProject3D(false);
+        }
+      }
+    };
+
+    checkProject3DStatus();
+
+    // Poll every 10 seconds if generation is in progress
+    if (project.meshy_id && !project.model_url) {
+      const interval = setInterval(checkProject3DStatus, 10000);
+      return () => clearInterval(interval);
+    }
+  }, [project.id, project.meshy_id, project.model_url, onProjectUpdate]);
+
+  const handleGenerateProject3D = async () => {
+    setGeneratingProject3D(true);
+    try {
+      await dataApi.generate3DModel(project.id);
+      // Refresh project to get meshy_id
+      if (onProjectUpdate) {
+        onProjectUpdate();
+      }
+    } catch (error: any) {
+      console.error("Failed to generate project 3D model:", error);
+      alert(error.response?.data?.error || error.message || "Failed to generate 3D model");
+    } finally {
+      setGeneratingProject3D(false);
+    }
+  };
+
+  const handleCheckProject3DStatus = async () => {
+    if (!project.meshy_id) return;
+    
+    setCheckingProject3D(true);
+    try {
+      const status = await dataApi.check3DStatus(project.id);
+      setProject3DStatus(status);
+      
+      // If completed, refresh project data
+      if (status.status === "SUCCEEDED" && status.model_url && onProjectUpdate) {
+        onProjectUpdate();
+      }
+    } catch (error) {
+      console.error("Failed to check project 3D status:", error);
+    } finally {
+      setCheckingProject3D(false);
+    }
+  };
 
   const handleAddVideo = () => {
     setSelectedVideoProject(null);
@@ -509,6 +597,7 @@ export function CompletedDashboard({
           <Tabs.Trigger value="suppliers">Suppliers ({suppliers.length})</Tabs.Trigger>
           <Tabs.Trigger value="layouts">Layouts ({layoutFiles.length})</Tabs.Trigger>
           <Tabs.Trigger value="videos">Videos ({videoProjects.length})</Tabs.Trigger>
+          <Tabs.Trigger value="3d">3D Model</Tabs.Trigger>
           <Tabs.Trigger value="documents">Documents</Tabs.Trigger>
         </Tabs.List>
 
@@ -1508,6 +1597,171 @@ export function CompletedDashboard({
               </Text>
             </div>
           )}
+        </Tabs.Content>
+
+        {/* 3D Model Tab */}
+        <Tabs.Content value="3d" className="mt-4">
+          <div className="space-y-6">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <Heading level="h2" className="text-xl">
+                  3D Factory Model
+                </Heading>
+                <Text size="small" className="text-ui-fg-muted">
+                  Low-poly 3D simulation generated from isometric layout
+                </Text>
+              </div>
+            </div>
+
+            {project.model_url ? (
+              // Model is ready
+              <Container className="p-0 overflow-hidden">
+                <div className="p-8 bg-gradient-to-br from-purple-600 to-indigo-800 text-white">
+                  <div className="flex items-start justify-between mb-6">
+                    <div>
+                      <Text size="xsmall" className="text-purple-200 uppercase tracking-widest mb-2">
+                        3D Model Ready
+                      </Text>
+                      <Heading level="h3" className="text-white text-xl">
+                        Factory 3D Model
+                      </Heading>
+                    </div>
+                    <div className="w-14 h-14 rounded-lg bg-white/10 flex items-center justify-center">
+                      <svg className="w-7 h-7 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
+                      </svg>
+                    </div>
+                  </div>
+                  <Text size="small" className="text-purple-100 leading-relaxed">
+                    Your factory 3D model has been generated successfully. Download the GLB file to view it in any 3D viewer or CAD software.
+                  </Text>
+                </div>
+                <div className="p-4 bg-ui-bg-base flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <Badge color="purple" size="small">GLB</Badge>
+                    <Text size="small" className="text-ui-fg-muted">
+                      3D model file
+                    </Text>
+                  </div>
+                  <Button
+                    variant="primary"
+                    size="small"
+                    onClick={() => window.open(project.model_url!, "_blank")}
+                    className="gap-2"
+                  >
+                    <ArrowDownTray className="w-4 h-4" />
+                    Download 3D Model
+                  </Button>
+                </div>
+              </Container>
+            ) : project.meshy_id ? (
+              // Generation in progress
+              <Container className="p-0 overflow-hidden">
+                <div className="p-8 bg-gradient-to-br from-orange-50 to-amber-100">
+                  <div className="flex items-start justify-between mb-6">
+                    <div>
+                      <Text size="xsmall" className="text-orange-600 uppercase tracking-widest mb-2">
+                        Generation in Progress
+                      </Text>
+                      <Heading level="h3" className="text-orange-900 text-xl">
+                        3D Model Generating
+                      </Heading>
+                    </div>
+                    <div className="w-14 h-14 rounded-lg bg-orange-200/50 flex items-center justify-center">
+                      <div className="w-8 h-8 border-4 border-orange-600 border-t-transparent rounded-full animate-spin" />
+                    </div>
+                  </div>
+                  <Text size="small" className="text-orange-700 leading-relaxed mb-4">
+                    Your factory 3D model is being generated from the isometric layout. This may take a few minutes.
+                  </Text>
+                  {project3DStatus && (
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <Text size="small" className="text-orange-600">
+                          Status: {project3DStatus.status}
+                        </Text>
+                        <Text size="small" className="text-orange-600 font-medium">
+                          {project3DStatus.progress}%
+                        </Text>
+                      </div>
+                      <div className="w-full bg-orange-200 rounded-full h-2">
+                        <div
+                          className="bg-orange-600 h-2 rounded-full transition-all duration-300"
+                          style={{ width: `${project3DStatus.progress}%` }}
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+                <div className="p-4 bg-ui-bg-base flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <Badge color="orange" size="small">Processing</Badge>
+                    <Text size="small" className="text-ui-fg-muted">
+                      Checking status automatically...
+                    </Text>
+                  </div>
+                  <Button
+                    variant="secondary"
+                    size="small"
+                    onClick={handleCheckProject3DStatus}
+                    isLoading={checkingProject3D}
+                    disabled={checkingProject3D}
+                    className="gap-2"
+                  >
+                    {checkingProject3D ? "Checking..." : "Check Status"}
+                  </Button>
+                </div>
+              </Container>
+            ) : (
+              // Not started - check if isometric exists
+              (() => {
+                const isometricFile = layoutFiles.find(f => 
+                  f.metadata?.layout_type === "isometric" || 
+                  f.metadata?.layoutType === "isometric" ||
+                  f.filename?.toLowerCase().includes("isometric")
+                );
+
+                if (!isometricFile) {
+                  return (
+                    <Container className="p-12 text-center border-2 border-dashed border-ui-border-strong">
+                      <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-gradient-to-br from-purple-500 to-indigo-600 flex items-center justify-center">
+                        <svg className="w-8 h-8 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
+                        </svg>
+                      </div>
+                      <Heading level="h3" className="mb-2">Isometric Layout Required</Heading>
+                      <Text className="text-ui-fg-muted mb-4 max-w-md mx-auto">
+                        Please generate layouts first. The 3D model will be created from the isometric view.
+                      </Text>
+                    </Container>
+                  );
+                }
+
+                return (
+                  <Container className="p-12 text-center border-2 border-dashed border-ui-border-strong">
+                    <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-gradient-to-br from-purple-500 to-indigo-600 flex items-center justify-center">
+                      <svg className="w-8 h-8 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
+                      </svg>
+                    </div>
+                    <Heading level="h3" className="mb-2">Generate 3D Model</Heading>
+                    <Text className="text-ui-fg-muted mb-4 max-w-md mx-auto">
+                      Create a low-poly 3D simulation of your factory from the isometric layout. The model will be generated using AI and can be downloaded as a GLB file.
+                    </Text>
+                    <Button
+                      variant="primary"
+                      onClick={handleGenerateProject3D}
+                      isLoading={generatingProject3D}
+                      disabled={generatingProject3D}
+                      className="gap-2"
+                    >
+                      {generatingProject3D ? "Generating..." : "Generate 3D Model"}
+                    </Button>
+                  </Container>
+                );
+              })()
+            )}
+          </div>
         </Tabs.Content>
 
         {/* Videos Tab */}

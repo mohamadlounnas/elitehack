@@ -366,7 +366,7 @@ class ImageGenerationService {
     try {
       // Use Gemini 2.5 Flash Image model for image generation
       const model = this.genAI.getGenerativeModel({
-        model: "models/gemini-2.5-flash-image",
+        model: "models/gemini-3-pro-image-preview",
       });
 
       // Create a prompt for image generation with white background requirement

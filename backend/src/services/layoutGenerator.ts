@@ -9,7 +9,8 @@ import { fileURLToPath } from "url";
 import { 
   ELITE_FLOOR_PLAN_PROMPT, 
   ELITE_ATEX_ZONES_PROMPT, 
-  ELITE_AGV_ROUTING_PROMPT 
+  ELITE_AGV_ROUTING_PROMPT,
+  ELITE_ISOMETRIC_PROMPT
 } from "./ai/prompts/eliteSystemPrompts.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -17,7 +18,7 @@ const __dirname = path.dirname(__filename);
 
 type LayoutStreamCallback = (update: {
   type: "starting" | "generating" | "complete";
-  layoutType?: "floor_plan" | "atex_zones" | "agv_routing";
+  layoutType?: "floor_plan" | "atex_zones" | "agv_routing" | "isometric";
   imageUrl?: string;
   progress: number;
   total: number;
@@ -115,34 +116,43 @@ class LayoutGeneratorService {
       const assetsList = assets || [];
       console.log(`[LAYOUT GENERATION] Found ${assetsList.length} assets`);
 
-      onUpdate({ type: "starting", progress: 0, total: 3 });
+      onUpdate({ type: "starting", progress: 0, total: 4 });
 
       // Step 1: Generate Factory Floor Plan
-      console.log(`[LAYOUT GENERATION] Step 1/3: Generating Elite Factory Floor Plan...`);
-      onUpdate({ type: "generating", layoutType: "floor_plan", progress: 1, total: 3 });
+      console.log(`[LAYOUT GENERATION] Step 1/4: Generating Elite Factory Floor Plan...`);
+      onUpdate({ type: "generating", layoutType: "floor_plan", progress: 1, total: 4 });
       const floorPlanImage = await this.generateFloorPlanWithAI(planningData, assetsList);
       await this.saveDebugImage(projectId, "floor_plan", floorPlanImage);
       await this.saveLayout(projectId, "factory_floor_plan.png", "floor_plan", floorPlanImage);
-      onUpdate({ type: "complete", layoutType: "floor_plan", imageUrl: floorPlanImage, progress: 1, total: 3 });
+      onUpdate({ type: "complete", layoutType: "floor_plan", imageUrl: floorPlanImage, progress: 1, total: 4 });
       console.log(`[LAYOUT GENERATION] Floor plan saved`);
 
       // Step 2: Add ATEX Zones (on top of floor plan)
-      console.log(`[LAYOUT GENERATION] Step 2/3: Adding ATEX Zones...`);
-      onUpdate({ type: "generating", layoutType: "atex_zones", progress: 2, total: 3 });
+      console.log(`[LAYOUT GENERATION] Step 2/4: Adding ATEX Zones...`);
+      onUpdate({ type: "generating", layoutType: "atex_zones", progress: 2, total: 4 });
       const atexImage = await this.addATEXZonesWithAI(floorPlanImage, planningData);
       await this.saveDebugImage(projectId, "atex_zones", atexImage);
       await this.saveLayout(projectId, "atex_zones.png", "atex_zones", atexImage);
-      onUpdate({ type: "complete", layoutType: "atex_zones", imageUrl: atexImage, progress: 2, total: 3 });
+      onUpdate({ type: "complete", layoutType: "atex_zones", imageUrl: atexImage, progress: 2, total: 4 });
       console.log(`[LAYOUT GENERATION] ATEX zones saved`);
 
       // Step 3: Add AGV Routing (on top of floor plan)
-      console.log(`[LAYOUT GENERATION] Step 3/3: Adding AGV Routing...`);
-      onUpdate({ type: "generating", layoutType: "agv_routing", progress: 3, total: 3 });
+      console.log(`[LAYOUT GENERATION] Step 3/4: Adding AGV Routing...`);
+      onUpdate({ type: "generating", layoutType: "agv_routing", progress: 3, total: 4 });
       const agvImage = await this.addAGVRoutingWithAI(floorPlanImage, planningData);
       await this.saveDebugImage(projectId, "agv_routing", agvImage);
       await this.saveLayout(projectId, "agv_routing.png", "agv_routing", agvImage);
-      onUpdate({ type: "complete", layoutType: "agv_routing", imageUrl: agvImage, progress: 3, total: 3 });
+      onUpdate({ type: "complete", layoutType: "agv_routing", imageUrl: agvImage, progress: 3, total: 4 });
       console.log(`[LAYOUT GENERATION] AGV routing saved`);
+
+      // Step 4: Generate Isometric View (from floor plan)
+      console.log(`[LAYOUT GENERATION] Step 4/4: Generating Isometric View...`);
+      onUpdate({ type: "generating", layoutType: "isometric", progress: 4, total: 4 });
+      const isometricImage = await this.generateIsometricWithAI(floorPlanImage, planningData);
+      await this.saveDebugImage(projectId, "isometric", isometricImage);
+      await this.saveLayout(projectId, "isometric_view.png", "isometric", isometricImage);
+      onUpdate({ type: "complete", layoutType: "isometric", imageUrl: isometricImage, progress: 4, total: 4 });
+      console.log(`[LAYOUT GENERATION] Isometric view saved`);
 
       // Step transition handled by stepOrchestrator
       console.log(`[LAYOUT GENERATION] All layouts generated successfully!`);
@@ -409,6 +419,70 @@ Make the routes clearly visible against the factory layout background.`;
     } catch (error: any) {
       console.error(`[LAYOUT GENERATION] ERROR adding AGV routing:`, error);
       logger.error("Error adding AGV routing with AI", error);
+      return floorPlanImage;
+    }
+  }
+
+  /**
+   * Elite Isometric View Generation - Low-poly 3D simulation from floor plan
+   */
+  private async generateIsometricWithAI(
+    floorPlanImage: string,
+    planningData: any
+  ): Promise<string> {
+    try {
+      console.log(`[LAYOUT GENERATION] Generating isometric view with LangChain...`);
+      
+      const llm = createImageLLM();
+
+      const contentParts: any[] = [
+        {
+          type: "image_url",
+          image_url: floorPlanImage,
+        },
+      ];
+
+      // Get factory dimensions for context
+      const dimensions = planningData.factory_dimensions || {};
+      const height = dimensions.height || 10;
+      
+      const prompt = `${ELITE_ISOMETRIC_PROMPT}
+
+FACTORY DIMENSIONS:
+- Width: ${dimensions.width || 50}m
+- Length: ${dimensions.length || 100}m
+- Height: ${height}m
+- Floors: ${dimensions.floors || 1}
+
+Transform this 2D floor plan into a clean isometric low-poly 3D view. Show the factory from an elevated isometric angle (45 degrees) with simple geometric shapes representing walls, equipment, and structure. Use a modern, clean low-poly aesthetic suitable for computer simulation.`;
+
+      contentParts.push({ type: "text", text: prompt });
+      const message = new HumanMessage({ content: contentParts });
+
+      console.log(`[LAYOUT GENERATION] Invoking LangChain model for isometric view...`);
+      const response = await Promise.race([
+        llm.invoke([message]),
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error("AI call timeout")), this.AI_TIMEOUT_MS)
+        ),
+      ]) as any;
+
+      const content = response.content;
+      if (Array.isArray(content)) {
+        for (const part of content) {
+          if (part.type === "image" || part.inlineData) {
+            const imageData = part.inlineData?.data || part.data || "";
+            const mimeType = part.inlineData?.mimeType || part.mimeType || "image/png";
+            return `data:${mimeType};base64,${imageData}`;
+          }
+        }
+      }
+
+      console.warn(`[LAYOUT GENERATION] WARNING: AI did not generate isometric image`);
+      return floorPlanImage;
+    } catch (error: any) {
+      console.error(`[LAYOUT GENERATION] ERROR generating isometric view:`, error);
+      logger.error("Error generating isometric view with AI", error);
       return floorPlanImage;
     }
   }
