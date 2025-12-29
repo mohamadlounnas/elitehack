@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { supabase } from "../utils/supabase.js";
+import { supabase, supabaseQueryWithRetry } from "../utils/supabase.js";
 import { logger } from "../utils/logger.js";
 import { fullReportGenerator } from "../services/fullReportGenerator.js";
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -97,11 +97,13 @@ router.get("/:id/generated-files", async (req, res) => {
     logger.info("Fetching generated files", { projectId: id });
 
     logger.db("SELECT", "generated_files", { projectId: id });
-    const { data, error } = await supabase
-      .from("generated_files")
-      .select("*")
-      .eq("project_id", id)
-      .order("created_at", { ascending: true });
+    const { data, error } = await supabaseQueryWithRetry<any[]>(() =>
+      supabase
+        .from("generated_files")
+        .select("*")
+        .eq("project_id", id)
+        .order("created_at", { ascending: true })
+    );
 
     if (error) {
       logger.error("Error fetching generated files", error, { projectId: id });
@@ -110,7 +112,7 @@ router.get("/:id/generated-files", async (req, res) => {
 
     logger.info("Generated files fetched successfully", { 
       projectId: id, 
-      count: data?.length || 0 
+      count: Array.isArray(data) ? data.length : 0 
     });
     res.json(data || []);
   } catch (error: any) {

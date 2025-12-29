@@ -1,11 +1,14 @@
 import { Router } from "express";
-import { supabase } from "../utils/supabase.js";
+import { supabase, supabaseQueryWithRetry } from "../utils/supabase.js";
 import { logger } from "../utils/logger.js";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import fs from "fs";
+import fsPromises from "fs/promises";
 import path from "path";
 import { fileURLToPath } from "url";
 import dotenv from "dotenv";
+import axios from "axios";
+import { uploadImageToStorage } from "../utils/storage.js";
 
 dotenv.config();
 
@@ -40,11 +43,13 @@ router.get("/:projectId/videos", async (req, res) => {
     const { projectId } = req.params;
     logger.info("Fetching video projects", { projectId });
 
-    const { data, error } = await supabase
-      .from("video_projects")
-      .select("*")
-      .eq("project_id", projectId)
-      .order("created_at", { ascending: false });
+    const { data, error } = await supabaseQueryWithRetry<VideoProject[]>(() =>
+      supabase
+        .from("video_projects")
+        .select("*")
+        .eq("project_id", projectId)
+        .order("created_at", { ascending: false })
+    );
 
     if (error) {
       logger.error("Error fetching video projects", error);
@@ -262,27 +267,14 @@ Key Equipment: ${assets.map((a: any) => a.name).join(", ")}
       model: "models/gemini-2.5-flash-image",
     });
 
-    // Helper function to save base64 image to file system and return URL
-    const saveImageToFileSystem = async (projectId: string, frameType: string, dataUrl: string): Promise<string> => {
+    // Helper function to save image to Supabase Storage and return public URL
+    const saveImageToStorage = async (projectId: string, frameType: string, dataUrl: string): Promise<string> => {
       try {
-        const base64Data = dataUrl.split(",")[1];
-        if (!base64Data) {
-          throw new Error("Invalid data URL format");
-        }
-
-        const imageBuffer = Buffer.from(base64Data, "base64");
         const filename = `${frameType}_frame_${Date.now()}.png`;
-        const projectDir = path.join(process.cwd(), "tmp", "projects", projectId);
-        
-        await fs.promises.mkdir(projectDir, { recursive: true });
-        
-        const filePath = path.join(projectDir, filename);
-        await fs.promises.writeFile(filePath, imageBuffer);
-        
-        // Return relative path that frontend can use to construct full URL
-        return `/tmp/projects/${projectId}/${filename}`;
+        const publicUrl = await uploadImageToStorage(projectId, filename, dataUrl, "image/png");
+        return publicUrl;
       } catch (error: any) {
-        logger.error("Error saving image to file system", error);
+        logger.error("Error saving image to Supabase Storage", error);
         throw error;
       }
     };
@@ -467,23 +459,23 @@ Requirements:
         }
 
         if (imageUrl) {
-          // Save image to file system instead of storing base64 in database
+          // Save image to Supabase Storage and get public URL
           try {
-            const filePath = await saveImageToFileSystem(projectId, frame, imageUrl);
+            const publicUrl = await saveImageToStorage(projectId, frame, imageUrl);
             
             if (frame === "first") {
-              results.first_frame_url = filePath;
+              results.first_frame_url = publicUrl;
             } else {
-              results.last_frame_url = filePath;
+              results.last_frame_url = publicUrl;
             }
 
-            // Send the file path (frontend will need to construct the full URL)
+            // Send the public URL
             sendEvent("frame_complete", {
               frame,
-              imageUrl: filePath, // Send file path instead of data URL
+              imageUrl: publicUrl,
             });
           } catch (saveError: any) {
-            logger.error(`Error saving ${frame} frame to file system`, saveError);
+            logger.error(`Error saving ${frame} frame to Supabase Storage`, saveError);
             sendEvent("frame_error", {
               frame,
               message: `Failed to save frame: ${saveError.message}`,
@@ -534,8 +526,7 @@ Requirements:
 });
 
 /**
- * Generate video from frames (SSE streaming)
- * For now, returns a mock video URL
+ * Generate video from frames using Kie.ai Hailuo 2-3 Image To Video Standard API (SSE streaming)
  */
 router.get("/:projectId/videos/:videoId/generate-video/stream", async (req, res) => {
   const { projectId, videoId } = req.params;
@@ -550,10 +541,16 @@ router.get("/:projectId/videos/:videoId/generate-video/stream", async (req, res)
   };
 
   try {
-    // Get video project
+    const kieApiKey = process.env.KIE_API_KEY;
+    if (!kieApiKey) {
+      sendEvent("error", { message: "Kie.ai API key not configured" });
+      return res.end();
+    }
+
+    // Get video project (minimal check)
     const { data: videoProject, error: videoError } = await supabase
       .from("video_projects")
-      .select("*")
+      .select("id, metadata")
       .eq("id", videoId)
       .eq("project_id", projectId)
       .single();
@@ -563,54 +560,220 @@ router.get("/:projectId/videos/:videoId/generate-video/stream", async (req, res)
       return res.end();
     }
 
-    if (!videoProject.first_frame_url || !videoProject.last_frame_url) {
-      sendEvent("error", { message: "Please generate both frames first" });
-      return res.end();
-    }
-
     // Update status to generating
     await supabase
       .from("video_projects")
       .update({ status: "video_generating" })
       .eq("id", videoId);
 
-    sendEvent("progress", { message: "Preparing video generation...", progress: 10 });
+    sendEvent("progress", { message: "Preparing video generation...", progress: 5 });
 
-    // Simulate video generation steps
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    sendEvent("progress", { message: "Analyzing frames...", progress: 25 });
+    // Download test image and upload it via the upload API
+    sendEvent("progress", { message: "Downloading and uploading test image...", progress: 8 });
+    
+    let testImageUrl: string;
+    try {
+      // Download the Freepik image
+      const imageResponse = await axios.get(
+        "https://img.freepik.com/free-photo/factory-workshop-interior-machines-glass-production-background_645730-396.jpg?semt=ais_hybrid&w=740&q=80",
+        { responseType: "arraybuffer" }
+      );
 
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    sendEvent("progress", { message: "Generating transitions...", progress: 50 });
+      // Upload via the upload API using native FormData (Node.js 18+)
+      const formData = new FormData();
+      const blob = new Blob([Buffer.from(imageResponse.data)], { type: "image/jpeg" });
+      formData.append("file", blob, "factory_test_image.jpg");
 
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    sendEvent("progress", { message: "Rendering video...", progress: 75 });
+      // Use the storage server (separate service)
+      const storageServerUrl = process.env.STORAGE_SERVER_URL || "http://localhost:3333";
+      const uploadResponse = await fetch(`${storageServerUrl}/api/v1/tmp/upload`, {
+        method: "POST",
+        body: formData,
+      });
 
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    sendEvent("progress", { message: "Finalizing...", progress: 90 });
+      if (!uploadResponse.ok) {
+        throw new Error(`Upload failed: ${uploadResponse.statusText}`);
+      }
 
-    // For now, return mock video URL
-    // TODO: Integrate with Google Veo when available
-    const mockVideoUrl = "https://www.w3schools.com/html/mov_bbb.mp4";
+      const uploadResult = await uploadResponse.json() as { url: string };
+      testImageUrl = uploadResult.url;
+      
+      logger.info("Test image uploaded successfully", {
+        imageUrl: testImageUrl,
+        videoId,
+      });
+      
+      sendEvent("progress", { message: "Test image uploaded", progress: 10 });
+    } catch (uploadError: any) {
+      logger.error("Failed to upload test image", uploadError);
+      // Fallback to Unsplash image
+      testImageUrl = "https://images.unsplash.com/photo-1581091226825-a6a2a5aee158?w=800&q=80";
+      logger.info("Using fallback image URL", { url: testImageUrl });
+    }
+    
+    const videoPrompt = "Smooth cinematic transition showing the factory production floor in action, professional lighting, dynamic camera movement";
 
-    // Update video project with video URL
+    sendEvent("progress", { message: "Creating video generation task...", progress: 15 });
+
+    // Step 1: Create generation task with Kie.ai using hardcoded test image
+    const createTaskResponse = await axios.post(
+      "https://api.kie.ai/api/v1/jobs/createTask",
+      {
+        model: "hailuo/2-3-image-to-video-standard",
+        input: {
+          prompt: videoPrompt,
+          image_url: testImageUrl,
+          duration: "6", // 6 seconds
+          resolution: "1080P", // High quality
+        },
+      },
+      {
+        headers: {
+          "Authorization": `Bearer ${kieApiKey}`,
+          "Content-Type": "application/json",
+        },
+      }
+    );
+
+    if (createTaskResponse.data.code !== 200) {
+      throw new Error(createTaskResponse.data.msg || "Failed to create video generation task");
+    }
+
+    const taskId = createTaskResponse.data.data.taskId;
+    
+    // Store taskId in metadata for background polling
     await supabase
       .from("video_projects")
       .update({
-        video_url: mockVideoUrl,
-        status: "completed",
+        metadata: {
+          ...videoProject.metadata,
+          kie_task_id: taskId,
+          kie_task_created_at: new Date().toISOString(),
+        },
       })
       .eq("id", videoId);
+    
+    sendEvent("progress", { message: "Video generation task created, processing...", progress: 20 });
 
-    sendEvent("complete", {
-      message: "Video generation complete",
-      videoUrl: mockVideoUrl,
+    // Step 2: Poll for task status
+    const maxPollAttempts = 120; // 10 minutes max (5 second intervals)
+    let pollAttempts = 0;
+    let videoUrl: string | null = null;
+
+    const pollInterval = setInterval(async () => {
+      try {
+        pollAttempts++;
+
+        const statusResponse = await axios.get(
+          `https://api.kie.ai/api/v1/jobs/recordInfo?taskId=${taskId}`,
+          {
+            headers: {
+              "Authorization": `Bearer ${kieApiKey}`,
+            },
+          }
+        );
+
+        if (statusResponse.data.code !== 200) {
+          clearInterval(pollInterval);
+          sendEvent("error", { message: statusResponse.data.msg || "Failed to check task status" });
+          res.end();
+          return;
+        }
+
+        const taskData = statusResponse.data.data;
+        const state = taskData.state;
+
+        // Update progress based on state
+        if (state === "waiting") {
+          const progress = Math.min(20 + (pollAttempts * 2), 80);
+          sendEvent("progress", { 
+            message: "Video is being generated, please wait...", 
+            progress 
+          });
+        } else if (state === "success") {
+          clearInterval(pollInterval);
+
+          // Extract video URL from result
+          try {
+            const resultJson = JSON.parse(taskData.resultJson);
+            if (resultJson.resultUrls && resultJson.resultUrls.length > 0) {
+              videoUrl = resultJson.resultUrls[0];
+            } else {
+              throw new Error("No video URL in result");
+            }
+          } catch (parseError) {
+            clearInterval(pollInterval);
+            sendEvent("error", { message: "Failed to parse video result" });
+            res.end();
+            return;
+          }
+
+          // Update video project with video URL
+          await supabase
+            .from("video_projects")
+            .update({
+              video_url: videoUrl,
+              status: "completed",
+            })
+            .eq("id", videoId);
+
+          sendEvent("complete", {
+            message: "Video generation complete",
+            videoUrl: videoUrl,
+          });
+
+          res.end();
+        } else if (state === "fail") {
+          clearInterval(pollInterval);
+          const errorMsg = taskData.failMsg || "Video generation failed";
+          sendEvent("error", { message: errorMsg });
+          
+          // Update status
+          await supabase
+            .from("video_projects")
+            .update({ status: "frames_ready" }) // Reset to frames_ready so user can retry
+            .eq("id", videoId);
+          
+          res.end();
+        } else if (pollAttempts >= maxPollAttempts) {
+          clearInterval(pollInterval);
+          sendEvent("error", { message: "Video generation timeout. Please try again." });
+          
+          // Update status
+          await supabase
+            .from("video_projects")
+            .update({ status: "frames_ready" })
+            .eq("id", videoId);
+          
+          res.end();
+        }
+      } catch (pollError: any) {
+        clearInterval(pollInterval);
+        logger.error("Error polling video generation status", pollError);
+        sendEvent("error", { message: pollError.message || "Error checking video generation status" });
+        res.end();
+      }
+    }, 5000); // Poll every 5 seconds
+
+    // Cleanup on client disconnect
+    req.on("close", () => {
+      clearInterval(pollInterval);
     });
 
-    res.end();
   } catch (error: any) {
     logger.error("Error generating video", error);
-    sendEvent("error", { message: error.message });
+    sendEvent("error", { message: error.message || "Failed to generate video" });
+    
+    // Reset status on error
+    try {
+      await supabase
+        .from("video_projects")
+        .update({ status: "frames_ready" })
+        .eq("id", videoId);
+    } catch (updateError) {
+      // Ignore update errors
+    }
+    
     res.end();
   }
 });

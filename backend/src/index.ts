@@ -11,6 +11,8 @@ import streamRouter from "./routes/stream.js";
 import dataRouter from "./routes/data.js";
 import videosRouter from "./routes/videos.js";
 import { logger } from "./utils/logger.js";
+import { videoPollingService } from "./services/videoPollingService.js";
+import { ensureStorageBucket } from "./utils/storage.js";
 
 dotenv.config();
 
@@ -18,12 +20,25 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 
 // Configure CORS to allow requests from the frontend
+const allowedOrigins = process.env.FRONTEND_URL 
+  ? [process.env.FRONTEND_URL]
+  : ["http://localhost:5173", "http://localhost:3000", "http://127.0.0.1:5173"];
+
 app.use(
   cors({
-    origin: process.env.FRONTEND_URL || "http://localhost:5173",
+    origin: (origin, callback) => {
+      // Allow requests with no origin (like mobile apps or curl requests)
+      if (!origin) return callback(null, true);
+      
+      if (allowedOrigins.includes(origin) || process.env.NODE_ENV === "development") {
+        callback(null, true);
+      } else {
+        callback(new Error("Not allowed by CORS"));
+      }
+    },
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
+    allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
   })
 );
 // Increase body parser limit to handle large base64 image data URLs
@@ -59,5 +74,19 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
 app.listen(PORT, () => {
   // Server start message (only errors will be logged from now on)
   console.log(`Server started on port ${PORT}`);
+  
+  // Initialize services asynchronously (don't block server startup)
+  (async () => {
+    try {
+      // Ensure Supabase Storage bucket exists
+      await ensureStorageBucket();
+    } catch (error) {
+      // Don't crash server if bucket setup fails
+      console.error("Warning: Could not ensure storage bucket:", error);
+    }
+    
+    // Start background video polling service
+    videoPollingService.start();
+  })();
 });
 
