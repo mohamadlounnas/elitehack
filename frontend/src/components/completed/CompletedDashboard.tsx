@@ -1318,7 +1318,10 @@ export function CompletedDashboard({
                                     size="small"
                                     onClick={(e) => {
                                       e.stopPropagation();
-                                      setPreviewGLBUrl(asset.model_url!);
+                                      // Use proxy endpoint to avoid CORS issues
+                                      const apiBase = import.meta.env.VITE_API_BASE_URL || "http://localhost:3001/api";
+                                      const proxyUrl = `${apiBase}/projects/${project.id}/glb-proxy?url=${encodeURIComponent(asset.model_url!)}`;
+                                      setPreviewGLBUrl(proxyUrl);
                                       setPreviewTitle(`${asset.name} - 3D Model`);
                                       setIsGLBPreviewOpen(true);
                                     }}
@@ -1672,7 +1675,10 @@ export function CompletedDashboard({
                       variant="primary"
                       size="small"
                       onClick={() => {
-                        setPreviewGLBUrl(project.model_url!);
+                        // Use proxy endpoint to avoid CORS issues
+                        const apiBase = import.meta.env.VITE_API_BASE_URL || "http://localhost:3001/api";
+                        const proxyUrl = `${apiBase}/projects/${project.id}/glb-proxy?url=${encodeURIComponent(project.model_url!)}`;
+                        setPreviewGLBUrl(proxyUrl);
                         setPreviewTitle("Factory 3D Model");
                         setIsGLBPreviewOpen(true);
                       }}

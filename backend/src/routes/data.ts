@@ -6,6 +6,7 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 import fs from "fs";
 import path from "path";
 import dotenv from "dotenv";
+import axios from "axios";
 
 dotenv.config();
 
@@ -23,13 +24,12 @@ router.get("/:id/suppliers", async (req, res) => {
     const { id } = req.params;
     logger.info("Fetching suppliers", { projectId: id });
 
-    // Get all assets for this project with their suppliers
+    // Get all assets for this project
     logger.db("SELECT", "assets", { projectId: id });
     const { data: assets, error: assetsError } = await supabase
       .from("assets")
-      .select("id, name, supplier_id")
-      .eq("project_id", id)
-      .not("supplier_id", "is", null);
+      .select("id, name")
+      .eq("project_id", id);
 
     if (assetsError) {
       logger.error("Error fetching assets", assetsError, { projectId: id });
@@ -41,8 +41,27 @@ router.get("/:id/suppliers", async (req, res) => {
       return res.json([]);
     }
 
-    // Get unique supplier IDs
-    const supplierIds = [...new Set(assets.map(a => a.supplier_id).filter(Boolean))];
+    const assetIds = assets.map(a => a.id);
+
+    // Get all supplier relationships from asset_suppliers junction table
+    logger.db("SELECT", "asset_suppliers", { projectId: id, assetIds });
+    const { data: assetSuppliers, error: assetSuppliersError } = await supabase
+      .from("asset_suppliers")
+      .select("supplier_id, asset_id")
+      .in("asset_id", assetIds);
+
+    if (assetSuppliersError) {
+      logger.error("Error fetching asset_suppliers", assetSuppliersError, { projectId: id });
+      return res.status(500).json({ error: assetSuppliersError.message });
+    }
+
+    if (!assetSuppliers || assetSuppliers.length === 0) {
+      logger.info("No supplier relationships found", { projectId: id });
+      return res.json([]);
+    }
+
+    // Get unique supplier IDs from the junction table
+    const supplierIds = [...new Set(assetSuppliers.map((as: any) => as.supplier_id).filter(Boolean))];
 
     if (supplierIds.length === 0) {
       logger.info("No suppliers linked to assets", { projectId: id });
@@ -62,10 +81,14 @@ router.get("/:id/suppliers", async (req, res) => {
       return res.status(500).json({ error: suppliersError.message });
     }
 
-    // Map suppliers to their linked assets
+    // Map suppliers to their linked assets using the junction table
     const suppliersWithAssets = (suppliers || []).map((supplier: any) => {
+      const linkedAssetIds = assetSuppliers
+        .filter((as: any) => as.supplier_id === supplier.id)
+        .map((as: any) => as.asset_id);
+      
       const linkedAssets = assets
-        .filter(a => a.supplier_id === supplier.id)
+        .filter(a => linkedAssetIds.includes(a.id))
         .map(a => ({ id: a.id, name: a.name }));
       
       return {
@@ -1218,6 +1241,127 @@ router.get("/:id/check-3d-status", async (req, res) => {
   } catch (error: any) {
     logger.error("Error in GET /projects/:id/check-3d-status", error);
     res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /projects/:id/floor-plan-dwg
+ * Convert floor plan image to DWG/DXF format
+ */
+router.get("/:id/floor-plan-dwg", async (req, res) => {
+  try {
+    const { id: projectId } = req.params;
+    logger.info("Converting floor plan to DWG", { projectId });
+
+    // Get floor plan from generated files
+    let floorPlanFile = null;
+    
+    const { data: byType } = await supabase
+      .from("generated_files")
+      .select("*")
+      .eq("project_id", projectId)
+      .or("metadata->>layout_type.eq.floor_plan,metadata->>layout_type.eq.factory_floor_plan")
+      .limit(1)
+      .maybeSingle();
+
+    if (byType) {
+      floorPlanFile = byType;
+    } else {
+      // Try by filename
+      const { data: byFilename } = await supabase
+        .from("generated_files")
+        .select("*")
+        .eq("project_id", projectId)
+        .ilike("filename", "%floor_plan%")
+        .limit(1)
+        .maybeSingle();
+      
+      if (byFilename) {
+        floorPlanFile = byFilename;
+      }
+    }
+
+    if (!floorPlanFile) {
+      return res.status(404).json({ error: "Floor plan not found. Please generate layouts first." });
+    }
+
+    const imageUrl = floorPlanFile.file_path || floorPlanFile.storage_url;
+    if (!imageUrl) {
+      return res.status(404).json({ error: "Floor plan image not available" });
+    }
+
+    // Import DXF converter
+    const { createDXFZip } = await import("../services/dxfConverter.js");
+
+    // Create temporary ZIP file with DXF and image
+    const tempDir = path.join(process.cwd(), "tmp", "dxf");
+    await fs.promises.mkdir(tempDir, { recursive: true });
+    
+    const zipFilename = `floor_plan_${projectId}_${Date.now()}.zip`;
+    const zipPath = path.join(tempDir, zipFilename);
+
+    // Create ZIP with DXF and image
+    await createDXFZip(imageUrl, zipPath);
+
+    // Read ZIP file and send it
+    const zipBuffer = fs.readFileSync(zipPath);
+
+    // Set headers for download
+    res.setHeader("Content-Type", "application/zip");
+    res.setHeader("Content-Disposition", `attachment; filename="floor_plan_${projectId}.zip"`);
+    res.setHeader("Content-Length", zipBuffer.length.toString());
+
+    res.send(zipBuffer);
+
+    // Clean up temp file after a delay
+    setTimeout(() => {
+      fs.unlink(zipPath, (err) => {
+        if (err) logger.warn("Failed to delete temp ZIP file", { path: zipPath, error: err });
+      });
+    }, 5000);
+
+    logger.info("Floor plan DWG served successfully", { projectId });
+  } catch (error: any) {
+    logger.error("Error converting floor plan to DWG", error, { projectId: req.params.id });
+    res.status(500).json({ error: error.message || "Failed to convert floor plan to DWG" });
+  }
+});
+
+/**
+ * GET /projects/:id/glb-proxy
+ * Proxy GLB files to avoid CORS issues
+ */
+router.get("/:id/glb-proxy", async (req, res) => {
+  try {
+    const { id: projectId } = req.params;
+    const { url } = req.query;
+
+    if (!url || typeof url !== "string") {
+      return res.status(400).json({ error: "URL parameter is required" });
+    }
+
+    logger.info("Proxying GLB file", { projectId, url: url.substring(0, 100) });
+
+    // Fetch the GLB file from the external URL
+    const response = await axios.get(url, {
+      responseType: "arraybuffer",
+      headers: {
+        "User-Agent": "Mozilla/5.0",
+      },
+    });
+
+    // Set CORS headers
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+    res.setHeader("Content-Type", "model/gltf-binary");
+    res.setHeader("Content-Disposition", `inline; filename="model.glb"`);
+    res.setHeader("Cache-Control", "public, max-age=3600");
+
+    res.send(Buffer.from(response.data));
+  } catch (error: any) {
+    logger.error("Error proxying GLB file", error, { projectId: req.params.id });
+    res.status(500).json({ error: error.message || "Failed to proxy GLB file" });
   }
 });
 

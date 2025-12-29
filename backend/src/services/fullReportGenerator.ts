@@ -1654,9 +1654,10 @@ class FullReportGenerator {
 
     const capex = analysis?.initial_investment || {};
     const capexItems = [
-      ["Equipment & Machinery", capex.equipment || 0],
-      ["Building & Infrastructure", capex.building || 0],
+      ["Equipment & Machinery", capex.equipment_purchase || capex.equipment || 0],
+      ["Building & Infrastructure", capex.building || capex.infrastructure || 0],
       ["Installation & Setup", capex.installation || 0],
+      ["Training & Consulting", (capex.training || 0) + (capex.initial_consulting || 0)],
       ["Working Capital", capex.working_capital || 0],
       ["Contingency Reserve", capex.contingency || 0],
     ];
@@ -1665,6 +1666,87 @@ class FullReportGenerator {
       this.checkNewPage(25);
       this.drawFinancialRow(label, value as number);
       this.yPosition -= 25;
+    }
+
+    // Subtotal before taxes
+    const baseTotal = capex.total_without_taxes || 
+      (capex.equipment_purchase || capex.equipment || 0) +
+      (capex.building || capex.infrastructure || 0) +
+      (capex.installation || 0) +
+      (capex.training || 0) +
+      (capex.initial_consulting || 0) +
+      (capex.working_capital || 0) +
+      (capex.contingency || 0);
+
+    if (baseTotal > 0) {
+      this.yPosition -= 5;
+      this.currentPage.drawLine({
+        start: { x: this.margin, y: this.yPosition + 3 },
+        end: { x: this.pageWidth - this.margin, y: this.yPosition + 3 },
+        thickness: 1,
+        color: COLORS.navy,
+      });
+      this.drawFinancialRow("Subtotal (Before Taxes)", baseTotal);
+      this.yPosition -= 25;
+    }
+
+    // Algerian Tax Breakdown
+    const customsDuties = capex.customs_duties || 0;
+    const vat = capex.vat || 0;
+    const hasTaxes = customsDuties > 0 || vat > 0;
+    const hasAapiExemption = capex.tax_exempt_with_aapi === true;
+
+    if (hasTaxes || !hasAapiExemption) {
+      this.checkNewPage(70);
+      this.yPosition -= 5;
+      this.currentPage.drawText("Algerian Import Taxes", {
+        x: this.margin,
+        y: this.yPosition,
+        size: 10,
+        font: this.helveticaBold,
+        color: COLORS.textDark,
+      });
+      this.yPosition -= 20;
+
+      if (hasAapiExemption) {
+        this.currentPage.drawText("✓ AAPI Investment Approval: TAX EXEMPT", {
+          x: this.margin + 20,
+          y: this.yPosition,
+          size: 9,
+          font: this.helvetica,
+          color: rgb(0, 0.6, 0),
+        });
+        this.yPosition -= 20;
+        this.drawFinancialRow("Customs Duties", 0);
+        this.yPosition -= 25;
+        this.drawFinancialRow("VAT (19%)", 0);
+      } else {
+        this.currentPage.drawText("⚠ No AAPI Approval: Taxes Apply", {
+          x: this.margin + 20,
+          y: this.yPosition,
+          size: 9,
+          font: this.helvetica,
+          color: rgb(0.8, 0.4, 0),
+        });
+        this.yPosition -= 20;
+        if (customsDuties > 0) {
+          this.drawFinancialRow("Customs Duties (est. 5-30%)", customsDuties);
+          this.yPosition -= 25;
+        }
+        if (vat > 0) {
+          this.drawFinancialRow("VAT (19%)", vat);
+          this.yPosition -= 25;
+        }
+        this.yPosition -= 5;
+        this.currentPage.drawText("Note: Obtain AAPI approval to eliminate these taxes", {
+          x: this.margin + 20,
+          y: this.yPosition,
+          size: 8,
+          font: this.helvetica,
+          color: COLORS.textMedium,
+        });
+        this.yPosition -= 20;
+      }
     }
 
     // CAPEX Total

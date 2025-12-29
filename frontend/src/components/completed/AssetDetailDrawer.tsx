@@ -3,7 +3,7 @@
  * Shows detailed asset information with supplier comparison and scoring
  */
 
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import {
   Drawer,
   Heading,
@@ -30,6 +30,7 @@ import {
 } from "@medusajs/icons";
 import type { Asset, Supplier, AssetSupplier } from "../../types";
 import { assetsApi } from "../../services/api";
+import ModelViewer from "./ModelViewer";
 
 interface AssetDetailDrawerProps {
   asset: Asset | null;
@@ -220,6 +221,12 @@ export function AssetDetailDrawer({
                 onClick={() => setActiveTab("image")}
                 label="Image"
                 disabled={!displayAsset.image_url && !isLoadingAsset}
+              />
+              <TabButton 
+                active={activeTab === "3d"} 
+                onClick={() => setActiveTab("3d")}
+                label="3D Model"
+                disabled={!displayAsset.model_url}
               />
               <TabButton 
                 active={activeTab === "suppliers"} 
@@ -429,6 +436,58 @@ export function AssetDetailDrawer({
               </div>
             )}
 
+            {/* 3D Model Tab */}
+            {activeTab === "3d" && (
+              <div className="space-y-4">
+                {displayAsset.model_url ? (
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <Text weight="plus" size="small" className="text-ui-fg-muted mb-1">
+                          3D Model
+                        </Text>
+                        <Text size="xsmall" className="text-ui-fg-subtle">
+                          Interactive 3D visualization
+                        </Text>
+                      </div>
+                      <Button variant="secondary" size="small" asChild>
+                        <a
+                          href={displayAsset.model_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center gap-x-2"
+                        >
+                          <LinkIcon className="w-4 h-4" />
+                          Download Model
+                        </a>
+                      </Button>
+                    </div>
+                    <div className="flex items-center justify-center bg-ui-bg-subtle rounded-lg border border-ui-border-base p-4">
+                      <ModelViewer
+                        url={displayAsset.model_url}
+                        width="100%"
+                        height={500}
+                        className="min-h-[500px]"
+                      />
+                    </div>
+                    <div className="p-4 bg-ui-bg-subtle rounded-lg border border-ui-border-base">
+                      <Text size="xsmall" className="text-ui-fg-muted">
+                        <strong>Controls:</strong> Click and drag to rotate • Scroll to zoom • Right-click and drag to pan
+                      </Text>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-center py-12">
+                    <Swatch className="w-16 h-16 text-ui-fg-muted mx-auto mb-4" />
+                    <Text weight="plus" className="text-ui-fg-muted mb-2">No 3D Model Available</Text>
+                    <Text size="small" className="text-ui-fg-subtle">
+                      This asset doesn't have a 3D model yet. Generate one from the assets table.
+                    </Text>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Suppliers Tab */}
             {activeTab === "suppliers" && (
               <div className="space-y-4">
@@ -444,19 +503,19 @@ export function AssetDetailDrawer({
                   <>
                     {/* Top supplier highlight */}
                     {supplierScores.length > 0 && (
-                      <div className="bg-gradient-to-r from-green-600 to-emerald-600 rounded-lg p-4 text-white mb-4">
+                      <div className="bg-ui-bg-field rounded-lg p-4 border border-ui-border-strong mb-4">
                         <div className="flex items-center justify-between">
                           <div>
-                            <Text size="xsmall" className="text-green-100 uppercase tracking-wider">
+                            <Text size="xsmall" className="text-ui-fg-muted uppercase tracking-wider">
                               Recommended Supplier
                             </Text>
-                            <Text weight="plus" className="text-white text-lg">
+                            <Text weight="plus" className="text-ui-fg-base text-lg">
                               {supplierScores[0].supplier.name}
                             </Text>
                           </div>
                           <div className="text-right">
-                            <div className="text-3xl font-bold">{supplierScores[0].totalScore}</div>
-                            <Text size="xsmall" className="text-green-100">Score</Text>
+                            <div className="text-3xl font-bold text-ui-fg-base">{supplierScores[0].totalScore}</div>
+                            <Text size="xsmall" className="text-ui-fg-muted">Score</Text>
                           </div>
                         </div>
                       </div>
@@ -503,7 +562,7 @@ export function AssetDetailDrawer({
                                 key={item.supplier.id}
                                 className={clx(
                                   "text-center py-3 px-3 font-medium min-w-[120px]",
-                                  i === 0 && "bg-green-50"
+                                  i === 0 && "bg-ui-bg-field"
                                 )}
                               >
                                 <div className="flex flex-col items-center gap-1">
@@ -550,7 +609,7 @@ export function AssetDetailDrawer({
                           <tr className="bg-ui-bg-subtle">
                             <td className="py-3 px-4 text-ui-fg-muted font-medium">Quote Price</td>
                             {supplierScores.slice(0, 4).map((item, i) => (
-                              <td key={item.supplier.id} className={clx("text-center py-3 px-3", i === 0 && "bg-green-50")}>
+                              <td key={item.supplier.id} className={clx("text-center py-3 px-3", i === 0 && "bg-ui-bg-field")}>
                                 <span className="font-mono">
                                   {item.assetSupplier?.quote_price
                                     ? `$${item.assetSupplier.quote_price.toLocaleString()}`
@@ -562,7 +621,7 @@ export function AssetDetailDrawer({
                           <tr>
                             <td className="py-3 px-4 text-ui-fg-muted font-medium">Lead Time</td>
                             {supplierScores.slice(0, 4).map((item, i) => (
-                              <td key={item.supplier.id} className={clx("text-center py-3 px-3", i === 0 && "bg-green-50")}>
+                              <td key={item.supplier.id} className={clx("text-center py-3 px-3", i === 0 && "bg-ui-bg-field")}>
                                 {item.assetSupplier?.lead_time_days
                                   ? `${item.assetSupplier.lead_time_days} days`
                                   : "-"}
@@ -572,9 +631,9 @@ export function AssetDetailDrawer({
                           <tr className="bg-ui-bg-subtle">
                             <td className="py-3 px-4 text-ui-fg-muted font-medium">Verified</td>
                             {supplierScores.slice(0, 4).map((item, i) => (
-                              <td key={item.supplier.id} className={clx("text-center py-3 px-3", i === 0 && "bg-green-50")}>
+                              <td key={item.supplier.id} className={clx("text-center py-3 px-3", i === 0 && "bg-ui-bg-field")}>
                                 {item.supplier.verified ? (
-                                  <CheckCircleSolid className="w-5 h-5 text-green-500 mx-auto" />
+                                  <CheckCircleSolid className="w-5 h-5 text-ui-fg-interactive mx-auto" />
                                 ) : (
                                   <XMark className="w-5 h-5 text-ui-fg-muted mx-auto" />
                                 )}
@@ -591,11 +650,11 @@ export function AssetDetailDrawer({
                         Score Calculation
                       </Text>
                       <div className="flex flex-wrap gap-3 text-xs text-ui-fg-subtle">
-                        <span className="bg-white px-2 py-1 rounded">💰 Price: 30%</span>
-                        <span className="bg-white px-2 py-1 rounded">⭐ Quality: 25%</span>
-                        <span className="bg-white px-2 py-1 rounded">🚚 Delivery: 20%</span>
-                        <span className="bg-white px-2 py-1 rounded">🏢 Reliability: 15%</span>
-                        <span className="bg-white px-2 py-1 rounded">📍 Location: 10%</span>
+                        <span className="bg-ui-bg-base px-2 py-1 rounded border border-ui-border-base">💰 Price: 30%</span>
+                        <span className="bg-ui-bg-base px-2 py-1 rounded border border-ui-border-base">⭐ Quality: 25%</span>
+                        <span className="bg-ui-bg-base px-2 py-1 rounded border border-ui-border-base">🚚 Delivery: 20%</span>
+                        <span className="bg-ui-bg-base px-2 py-1 rounded border border-ui-border-base">🏢 Reliability: 15%</span>
+                        <span className="bg-ui-bg-base px-2 py-1 rounded border border-ui-border-base">📍 Location: 10%</span>
                       </div>
                     </div>
                   </>
@@ -685,8 +744,8 @@ function SupplierCard({
       className={clx(
         "rounded-lg border p-4 transition-all",
         isTop
-          ? "border-green-300 bg-gradient-to-br from-green-50 to-emerald-50 shadow-sm"
-          : "border-ui-border-base bg-white hover:border-ui-border-strong hover:shadow-sm"
+          ? "border-ui-border-strong bg-ui-bg-field shadow-sm"
+          : "border-ui-border-base bg-ui-bg-base hover:border-ui-border-strong hover:shadow-sm"
       )}
     >
       <div className="flex items-start justify-between mb-4">
@@ -695,7 +754,7 @@ function SupplierCard({
             className={clx(
               "w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold",
               isTop
-                ? "bg-green-600 text-white"
+                ? "bg-ui-fg-interactive text-ui-fg-on-interactive"
                 : rank === 2
                   ? "bg-ui-bg-subtle-hover text-ui-fg-base"
                   : "bg-ui-bg-subtle text-ui-fg-muted"
@@ -707,7 +766,7 @@ function SupplierCard({
             <div className="flex items-center gap-x-2">
               <Text weight="plus" className="text-base">{supplier.name}</Text>
               {supplier.verified && (
-                <ShieldCheck className="w-4 h-4 text-green-500" />
+                <ShieldCheck className="w-4 h-4 text-ui-fg-interactive" />
               )}
             </div>
             <Text size="small" className="text-ui-fg-muted">
@@ -720,10 +779,10 @@ function SupplierCard({
             className={clx(
               "text-3xl font-bold",
               totalScore >= 80
-                ? "text-green-600"
+                ? "text-ui-fg-interactive"
                 : totalScore >= 60
-                  ? "text-amber-600"
-                  : "text-red-500"
+                  ? "text-ui-fg-subtle"
+                  : "text-ui-fg-muted"
             )}
           >
             {totalScore}
@@ -764,7 +823,7 @@ function SupplierCard({
               key={star}
               className={clx(
                 "w-4 h-4",
-                star <= supplier.rating! ? "text-amber-400 fill-amber-400" : "text-ui-fg-muted"
+                star <= supplier.rating! ? "text-ui-fg-interactive fill-ui-fg-interactive" : "text-ui-fg-muted"
               )}
             />
           ))}
@@ -779,16 +838,16 @@ function SupplierCard({
         <div className="flex gap-x-4 py-3 border-t border-ui-border-base">
           {assetSupplier.quote_price && (
             <div className="flex items-center gap-x-2">
-              <CurrencyDollar className="w-4 h-4 text-green-600" />
-              <span className="font-medium text-green-700">
+              <CurrencyDollar className="w-4 h-4 text-ui-fg-interactive" />
+              <span className="font-medium text-ui-fg-base">
                 ${assetSupplier.quote_price.toLocaleString()}
               </span>
             </div>
           )}
           {assetSupplier.lead_time_days && (
             <div className="flex items-center gap-x-2">
-              <Clock className="w-4 h-4 text-blue-600" />
-              <span className="text-blue-700">{assetSupplier.lead_time_days} days</span>
+              <Clock className="w-4 h-4 text-ui-fg-subtle" />
+              <span className="text-ui-fg-base">{assetSupplier.lead_time_days} days</span>
             </div>
           )}
         </div>
@@ -825,11 +884,6 @@ function SupplierCard({
             Call
           </a>
         )}
-        {supplier.years_in_business && (
-          <span className="text-ui-fg-muted text-sm">
-            {supplier.years_in_business}+ years in business
-          </span>
-        )}
       </div>
     </div>
   );
@@ -839,15 +893,15 @@ function ScoreBar({ label, value }: { label: string; value: number }) {
   return (
     <div className="flex items-center gap-x-2">
       <Text size="xsmall" className="text-ui-fg-muted w-14">{label}</Text>
-      <div className="flex-1 h-2 bg-ui-bg-base rounded-full overflow-hidden border border-ui-border-base">
+      <div className="flex-1 h-2 bg-ui-bg-subtle rounded-full overflow-hidden border border-ui-border-base">
         <div
           className={clx(
             "h-full rounded-full transition-all",
             value >= 80
-              ? "bg-green-500"
+              ? "bg-ui-fg-interactive"
               : value >= 60
-                ? "bg-amber-500"
-                : "bg-red-400"
+                ? "bg-ui-fg-subtle"
+                : "bg-ui-fg-muted"
           )}
           style={{ width: `${value}%` }}
         />
@@ -887,9 +941,9 @@ function ComparisonRow({
             key={i}
             className={clx(
               "text-center py-3 px-3",
-              i === 0 && "bg-green-50",
-              isMax && !isTotal && "text-green-600 font-bold",
-              isMin && !isTotal && "text-red-500"
+              i === 0 && "bg-ui-bg-field",
+              isMax && !isTotal && "text-ui-fg-interactive font-bold",
+              isMin && !isTotal && "text-ui-fg-muted"
             )}
           >
             {format(score)}

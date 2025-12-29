@@ -29,7 +29,12 @@ interface DetailedCostBreakdown {
     initial_consulting: number;
     working_capital: number;
     contingency: number;
-    total: number;
+    // Algerian tax calculations
+    customs_duties?: number; // Applied if no AAPI approval (typically 5-30% of equipment)
+    vat?: number; // 19% VAT if no AAPI approval
+    tax_exempt_with_aapi?: boolean; // Whether AAPI approval provides tax exemption
+    total_without_taxes: number; // Equipment cost before taxes
+    total: number; // Total including taxes
   };
   operating_costs: {
     energy: number;
@@ -338,7 +343,11 @@ Generate a comprehensive financial analysis in JSON format:
     "initial_consulting": <number USD>,
     "working_capital": <number USD>,
     "contingency": <number USD>,
-    "total": <number USD>
+    "customs_duties": <number USD - calculate if no AAPI approval, typically 5-30% of equipment>,
+    "vat": <number USD - 19% VAT if no AAPI approval, calculated on equipment + customs>,
+    "tax_exempt_with_aapi": <boolean - true if AAPI approval provides tax exemption>,
+    "total_without_taxes": <number USD - sum of all costs before taxes>,
+    "total": <number USD - total including taxes if applicable>
   },
   "operating_costs": {
     "energy": <number USD annual>,
@@ -436,15 +445,49 @@ Provide REALISTIC industry-standard values. All monetary amounts in USD.`;
       const jsonText = jsonMatch[1] || analysisText;
       const analysis = JSON.parse(jsonText) as DetailedCostBreakdown;
 
-      // Validate and enhance calculations
-      analysis.initial_investment.total = 
-        analysis.initial_investment.equipment_purchase +
+      // Validate and enhance calculations with Algerian tax rules
+      const equipmentCost = analysis.initial_investment.equipment_purchase;
+      const baseTotal = 
+        equipmentCost +
         analysis.initial_investment.installation +
         analysis.initial_investment.infrastructure +
         analysis.initial_investment.training +
         analysis.initial_investment.initial_consulting +
         (analysis.initial_investment.working_capital || 0) +
         (analysis.initial_investment.contingency || 0);
+
+      // Calculate Algerian taxes if not provided
+      // Assume AAPI approval status is unknown, so calculate both scenarios
+      if (analysis.initial_investment.customs_duties === undefined) {
+        // Default: assume no AAPI approval initially (conservative estimate)
+        // Customs duties: typically 5-30% of equipment, use 15% as average
+        analysis.initial_investment.customs_duties = equipmentCost * 0.15;
+      }
+      
+      if (analysis.initial_investment.vat === undefined) {
+        // VAT: 19% on (equipment + customs duties) if no AAPI approval
+        const taxableBase = equipmentCost + (analysis.initial_investment.customs_duties || 0);
+        analysis.initial_investment.vat = taxableBase * 0.19;
+      }
+
+      if (analysis.initial_investment.tax_exempt_with_aapi === undefined) {
+        analysis.initial_investment.tax_exempt_with_aapi = true; // AAPI provides exemption
+      }
+
+      // Calculate totals
+      analysis.initial_investment.total_without_taxes = baseTotal;
+      
+      // Total with taxes (if no AAPI approval)
+      if (!analysis.initial_investment.tax_exempt_with_aapi) {
+        analysis.initial_investment.total = baseTotal + 
+          (analysis.initial_investment.customs_duties || 0) + 
+          (analysis.initial_investment.vat || 0);
+      } else {
+        // With AAPI approval, no taxes
+        analysis.initial_investment.total = baseTotal;
+        analysis.initial_investment.customs_duties = 0;
+        analysis.initial_investment.vat = 0;
+      }
 
       analysis.operating_costs.total_annual =
         analysis.operating_costs.energy +
@@ -540,7 +583,14 @@ Provide REALISTIC industry-standard values. All monetary amounts in USD.`;
     const annualUtilities = equipmentPurchase * 0.02;
     const annualCompliance = equipmentPurchase * 0.01;
 
-    const initialTotal = equipmentPurchase + installation + infrastructure + training + consulting + workingCapital + contingency;
+    // Calculate Algerian taxes (assuming no AAPI approval for conservative estimate)
+    const customsDuties = equipmentPurchase * 0.15; // 15% average customs duties
+    const vatBase = equipmentPurchase + customsDuties;
+    const vat = vatBase * 0.19; // 19% VAT
+    
+    const baseTotal = equipmentPurchase + installation + infrastructure + training + consulting + workingCapital + contingency;
+    const initialTotal = baseTotal + customsDuties + vat; // Include taxes in total
+    
     const annualOperating = annualEnergy + annualMaintenance + annualLabor + annualInsurance + annualConsumables + annualUtilities + annualCompliance;
 
     const projections: Array<{ year: number; revenue: number; costs: number; net_cash_flow: number; cumulative_cash_flow: number }> = [];
@@ -566,6 +616,10 @@ Provide REALISTIC industry-standard values. All monetary amounts in USD.`;
         initial_consulting: consulting,
         working_capital: workingCapital,
         contingency: contingency,
+        customs_duties: customsDuties,
+        vat: vat,
+        tax_exempt_with_aapi: true, // AAPI approval provides exemption
+        total_without_taxes: baseTotal,
         total: initialTotal,
       },
       operating_costs: {

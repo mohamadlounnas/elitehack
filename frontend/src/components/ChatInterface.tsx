@@ -13,6 +13,8 @@ import {
   Sparkles,
   User,
 } from "@medusajs/icons";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import type { ProjectMessage } from "../types";
 
 // Custom SVG Icons
@@ -330,9 +332,79 @@ export function ChatInterface({
         {contentParts.map((part, idx) => {
           if (part.type === "text" && part.text) {
             return (
-              <Text key={idx} className="whitespace-pre-wrap leading-relaxed">
-                {part.text}
-              </Text>
+              <div key={idx} className="prose prose-sm dark:prose-invert max-w-none">
+                <ReactMarkdown
+                  remarkPlugins={[remarkGfm]}
+                  components={{
+                    // Style headings
+                    h1: ({ children }) => <h1 className="text-lg font-semibold mb-2 mt-3 text-ui-fg-base">{children}</h1>,
+                    h2: ({ children }) => <h2 className="text-base font-semibold mb-2 mt-3 text-ui-fg-base">{children}</h2>,
+                    h3: ({ children }) => <h3 className="text-sm font-semibold mb-1 mt-2 text-ui-fg-base">{children}</h3>,
+                    // Style paragraphs
+                    p: ({ children }) => <p className="mb-2 text-ui-fg-base leading-relaxed">{children}</p>,
+                    // Style lists
+                    ul: ({ children }) => <ul className="list-disc list-inside mb-2 space-y-1 text-ui-fg-base">{children}</ul>,
+                    ol: ({ children }) => <ol className="list-decimal list-inside mb-2 space-y-1 text-ui-fg-base">{children}</ol>,
+                    li: ({ children }) => <li className="text-ui-fg-base">{children}</li>,
+                    // Style code blocks
+                    code: ({ className, children, ...props }) => {
+                      const isInline = !className;
+                      return isInline ? (
+                        <code className="bg-ui-bg-subtle px-1.5 py-0.5 rounded text-sm font-mono text-ui-fg-base" {...props}>
+                          {children}
+                        </code>
+                      ) : (
+                        <code className="block bg-ui-bg-subtle p-3 rounded-lg overflow-x-auto text-sm font-mono text-ui-fg-base mb-2" {...props}>
+                          {children}
+                        </code>
+                      );
+                    },
+                    pre: ({ children }) => <pre className="mb-2">{children}</pre>,
+                    // Style links
+                    a: ({ href, children }) => (
+                      <a 
+                        href={href} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="text-ui-fg-interactive hover:underline"
+                      >
+                        {children}
+                      </a>
+                    ),
+                    // Style blockquotes
+                    blockquote: ({ children }) => (
+                      <blockquote className="border-l-4 border-ui-border-strong pl-4 italic text-ui-fg-subtle my-2">
+                        {children}
+                      </blockquote>
+                    ),
+                    // Style tables
+                    table: ({ children }) => (
+                      <div className="overflow-x-auto my-2">
+                        <table className="min-w-full border-collapse border border-ui-border-base">
+                          {children}
+                        </table>
+                      </div>
+                    ),
+                    th: ({ children }) => (
+                      <th className="border border-ui-border-base bg-ui-bg-subtle px-3 py-2 text-left font-semibold text-ui-fg-base">
+                        {children}
+                      </th>
+                    ),
+                    td: ({ children }) => (
+                      <td className="border border-ui-border-base px-3 py-2 text-ui-fg-base">
+                        {children}
+                      </td>
+                    ),
+                    // Style horizontal rules
+                    hr: () => <hr className="my-3 border-ui-border-base" />,
+                    // Style strong and emphasis
+                    strong: ({ children }) => <strong className="font-semibold text-ui-fg-base">{children}</strong>,
+                    em: ({ children }) => <em className="italic text-ui-fg-base">{children}</em>,
+                  }}
+                >
+                  {part.text}
+                </ReactMarkdown>
+              </div>
             );
           } else if (part.type === "inlineData" && part.inlineData) {
             const imageUrl = `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;

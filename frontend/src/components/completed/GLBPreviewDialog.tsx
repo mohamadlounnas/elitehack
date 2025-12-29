@@ -1,19 +1,19 @@
 /**
  * GLB Preview Dialog
- * Displays 3D GLB models in a dialog using model-viewer
+ * Displays 3D GLB models in a dialog using @google/model-viewer
  */
 
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 import { 
   Button, 
   Text, 
   IconButton,
-  clx,
 } from "@medusajs/ui";
 import { 
   XMark,
   ArrowDownTray,
 } from "@medusajs/icons";
+import '@google/model-viewer';
 
 interface GLBPreviewDialogProps {
   isOpen: boolean;
@@ -22,170 +22,16 @@ interface GLBPreviewDialogProps {
   title?: string;
 }
 
-// Declare model-viewer as a web component
-declare global {
-  namespace JSX {
-    interface IntrinsicElements {
-      'model-viewer': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement> & {
-        src?: string;
-        'camera-controls'?: boolean;
-        'auto-rotate'?: boolean;
-        'ar'?: boolean;
-        'shadow-intensity'?: string;
-        'exposure'?: string;
-        'environment-image'?: string;
-        'interaction-policy'?: string;
-        style?: React.CSSProperties;
-      };
-    }
-  }
-}
-
 export function GLBPreviewDialog({
   isOpen,
   onClose,
   glbUrl,
   title = "3D Model Preview",
 }: GLBPreviewDialogProps) {
-  const [scriptLoaded, setScriptLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const containerRef = React.useRef<HTMLDivElement>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
-  // Load model-viewer script and create the element
-  useEffect(() => {
-    if (!isOpen || !containerRef.current) return;
-
-    let checkInterval: NodeJS.Timeout | null = null;
-    let maxAttempts = 30; // 15 seconds max (30 * 500ms)
-    let attempts = 0;
-
-    console.log('GLB Preview Dialog opened, loading model-viewer...');
-
-    const createModelViewer = () => {
-      const container = containerRef.current;
-      if (!container) return;
-      
-      container.innerHTML = '';
-      
-      const modelViewer = document.createElement('model-viewer');
-      modelViewer.setAttribute('src', glbUrl);
-      modelViewer.setAttribute('camera-controls', '');
-      modelViewer.setAttribute('auto-rotate', '');
-      modelViewer.setAttribute('shadow-intensity', '1');
-      modelViewer.setAttribute('exposure', '1');
-      modelViewer.setAttribute('interaction-policy', 'allow-when-focused');
-      modelViewer.setAttribute('ar', '');
-      modelViewer.setAttribute('ar-modes', 'webxr scene-viewer quick-look');
-      modelViewer.style.width = '100%';
-      modelViewer.style.height = '100%';
-      modelViewer.style.backgroundColor = '#f8f9fa';
-      
-      // Add error handler
-      modelViewer.addEventListener('error', (e: any) => {
-        console.error('Model viewer error:', e);
-        setError('Failed to load 3D model. The file may be corrupted or inaccessible.');
-      });
-      
-      // Add loading placeholder
-      const poster = document.createElement('div');
-      poster.setAttribute('slot', 'poster');
-      poster.className = 'absolute inset-0 flex items-center justify-center bg-ui-bg-subtle';
-      poster.innerHTML = `
-        <div class="text-center">
-          <div class="w-16 h-16 mx-auto mb-4 border-4 border-ui-border-base border-t-purple-500 rounded-full animate-spin"></div>
-          <p class="text-ui-fg-muted">Loading 3D model...</p>
-        </div>
-      `;
-      modelViewer.appendChild(poster);
-      
-      container.appendChild(modelViewer);
-    };
-
-    const checkModelViewer = () => {
-      attempts++;
-      
-      // Check if custom element is defined
-      const isDefined = customElements.get('model-viewer');
-      if (isDefined) {
-        console.log('Model viewer custom element found!');
-        setScriptLoaded(true);
-        setError(null);
-        
-        if (checkInterval) {
-          clearInterval(checkInterval);
-        }
-        
-        createModelViewer();
-        return true;
-      }
-      return false;
-    };
-
-    // First check if already loaded
-    if (checkModelViewer()) {
-      return;
-    }
-
-    // Check if script is already in the page
-    const existingScript = document.querySelector('script[src*="model-viewer"]');
-    
-    if (existingScript) {
-      console.log('Model viewer script found in page, waiting for it to load...');
-      // Script exists, just wait for it
-      checkInterval = setInterval(() => {
-        if (checkModelViewer() || attempts >= maxAttempts) {
-          if (checkInterval) {
-            clearInterval(checkInterval);
-          }
-          if (attempts >= maxAttempts && !customElements.get('model-viewer')) {
-            setError('3D viewer failed to load. Please refresh the page.');
-          }
-        }
-      }, 500);
-    } else {
-      console.log('Loading model viewer script...');
-      // Load the script
-      const script = document.createElement('script');
-      script.type = 'module';
-      script.src = 'https://ajax.googleapis.com/ajax/libs/model-viewer/3.3.0/model-viewer.min.js';
-      script.async = true;
-      
-      script.onload = () => {
-        console.log('Model viewer script loaded, waiting for custom element...');
-        // Wait for custom element to register
-        checkInterval = setInterval(() => {
-          if (checkModelViewer() || attempts >= maxAttempts) {
-            if (checkInterval) {
-              clearInterval(checkInterval);
-            }
-            if (attempts >= maxAttempts && !customElements.get('model-viewer')) {
-              setError('3D viewer custom element failed to register. Please refresh the page.');
-            }
-          }
-        }, 200);
-      };
-      
-      script.onerror = () => {
-        console.error('Failed to load model viewer script');
-        setError('Failed to load 3D viewer script. Please check your internet connection.');
-      };
-      
-      document.head.appendChild(script);
-    }
-    
-    // Cleanup on unmount
-    return () => {
-      if (loadHandler) {
-        window.removeEventListener('load', loadHandler);
-      }
-      if (checkInterval) {
-        clearInterval(checkInterval);
-      }
-      if (containerRef.current) {
-        containerRef.current.innerHTML = '';
-      }
-    };
-  }, [isOpen, glbUrl]);
+  if (!isOpen) return null;
 
   if (!isOpen) return null;
 
@@ -244,15 +90,58 @@ export function GLBPreviewDialog({
                 </Button>
               </div>
             </div>
-          ) : !scriptLoaded ? (
-            <div className="absolute inset-0 flex items-center justify-center">
-              <div className="text-center">
-                <div className="w-16 h-16 mx-auto mb-4 border-4 border-ui-border-base border-t-purple-500 rounded-full animate-spin" />
-                <Text className="text-ui-fg-muted">Loading 3D viewer...</Text>
-              </div>
-            </div>
           ) : (
-            <div ref={containerRef} className="w-full h-full" />
+            <model-viewer
+              src={glbUrl}
+              camera-controls
+              auto-rotate
+              shadow-intensity="1"
+              exposure="1"
+              interaction-policy="allow-when-focused"
+              ar
+              ar-modes="webxr scene-viewer quick-look"
+              loading="eager"
+              reveal="auto"
+              alt="3D Model"
+              style={{
+                width: '100%',
+                height: '100%',
+                backgroundColor: '#f8f9fa',
+              }}
+              onLoad={() => {
+                console.log('Model loaded successfully');
+                setIsLoading(false);
+                setError(null);
+              }}
+              onError={(e: any) => {
+                console.error('Model viewer error:', e);
+                const errorDetail = e.detail?.message || e.message || 'Unknown error';
+                setError(`Failed to load 3D model: ${errorDetail}`);
+                setIsLoading(false);
+              }}
+              onModelError={(e: any) => {
+                console.error('Model error:', e);
+                setError('Failed to load 3D model. The file may be corrupted or inaccessible.');
+                setIsLoading(false);
+              }}
+              onProgress={(e: any) => {
+                const progress = e.detail?.totalProgress || 0;
+                console.log('Model loading progress:', progress);
+                if (progress >= 1) {
+                  setIsLoading(false);
+                }
+              }}
+            >
+              {/* Loading placeholder */}
+              {isLoading && (
+                <div slot="poster" className="absolute inset-0 flex items-center justify-center bg-ui-bg-subtle">
+                  <div className="text-center">
+                    <div className="w-16 h-16 mx-auto mb-4 border-4 border-ui-border-base border-t-purple-500 rounded-full animate-spin" />
+                    <Text className="text-ui-fg-muted">Loading 3D model...</Text>
+                  </div>
+                </div>
+              )}
+            </model-viewer>
           )}
         </div>
 

@@ -240,14 +240,48 @@ export function FloorPlanDrawer({
                       </Text>
                     </div>
                     {floorPlanUrl && (
-                      <Button
-                        variant="secondary"
-                        size="small"
-                        onClick={() => handleDownload(floorPlanUrl, floorPlan?.filename || "floor_plan.png")}
-                      >
-                        <ArrowDownTray className="w-4 h-4" />
-                        Download
-                      </Button>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="secondary"
+                          size="small"
+                          onClick={() => handleDownload(floorPlanUrl, floorPlan?.filename || "floor_plan.png")}
+                        >
+                          <ArrowDownTray className="w-4 h-4" />
+                          Download PNG
+                        </Button>
+                        <Button
+                          variant="secondary"
+                          size="small"
+                          onClick={async () => {
+                            try {
+                              const apiBase = import.meta.env.VITE_API_BASE_URL || "http://localhost:3001/api";
+                              const response = await fetch(`${apiBase}/projects/${projectId}/floor-plan-dwg`);
+                              
+                              if (!response.ok) {
+                                const errorText = await response.text();
+                                throw new Error(errorText || "Failed to download DWG file");
+                              }
+                              
+                              const blob = await response.blob();
+                              const url = window.URL.createObjectURL(blob);
+                              const link = document.createElement("a");
+                              link.href = url;
+                              link.download = `floor_plan_${projectId}.zip`;
+                              link.click();
+                              window.URL.revokeObjectURL(url);
+                            } catch (error: any) {
+                              console.error("Error downloading DWG:", error);
+                              alert(error.message || "Failed to download DWG file");
+                            }
+                          }}
+                          title="Downloads a ZIP file containing the DXF file and PNG image. Extract the ZIP and open the DXF file in AutoCAD."
+                        >
+                          <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
+                          </svg>
+                          Download DWG
+                        </Button>
+                      </div>
                     )}
                   </div>
                   <div className="aspect-[16/10] bg-ui-bg-subtle flex items-center justify-center p-4">
