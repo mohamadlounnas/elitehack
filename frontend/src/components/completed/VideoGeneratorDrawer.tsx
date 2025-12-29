@@ -97,16 +97,13 @@ export function VideoGeneratorDrawer({
 
   const [title, setTitle] = useState(videoProject?.title || "Untitled Video");
   
-  // Separate prompts for frames
-  const [firstFramePrompt, setFirstFramePrompt] = useState(videoProject?.metadata?.first_frame_prompt || "");
+  // Prompt for last frame only
   const [lastFramePrompt, setLastFramePrompt] = useState(videoProject?.metadata?.last_frame_prompt || "");
   
-  const [firstFrame, setFirstFrame] = useState<string | null>(videoProject?.first_frame_url || null);
   const [lastFrame, setLastFrame] = useState<string | null>(videoProject?.last_frame_url || null);
   const [videoUrl, setVideoUrl] = useState<string | null>(videoProject?.video_url || null);
   const [status, setStatus] = useState<VideoProject["status"]>(videoProject?.status || "draft");
   
-  const [isGeneratingFirstFrame, setIsGeneratingFirstFrame] = useState(false);
   const [isGeneratingLastFrame, setIsGeneratingLastFrame] = useState(false);
   const [isGeneratingVideo, setIsGeneratingVideo] = useState(false);
   const [generationProgress, setGenerationProgress] = useState("");
@@ -119,9 +116,7 @@ export function VideoGeneratorDrawer({
   useEffect(() => {
     if (videoProject) {
       setTitle(videoProject.title);
-      setFirstFramePrompt(videoProject.metadata?.first_frame_prompt || "");
       setLastFramePrompt(videoProject.metadata?.last_frame_prompt || "");
-      setFirstFrame(videoProject.first_frame_url);
       setLastFrame(videoProject.last_frame_url);
       setVideoUrl(videoProject.video_url);
       setStatus(videoProject.status);
@@ -130,9 +125,7 @@ export function VideoGeneratorDrawer({
     } else {
       // Reset for new video
       setTitle("Untitled Video");
-      setFirstFramePrompt("");
       setLastFramePrompt("");
-      setFirstFrame(null);
       setLastFrame(null);
       setVideoUrl(null);
       setStatus("draft");
@@ -142,22 +135,16 @@ export function VideoGeneratorDrawer({
     setError(null);
   }, [videoProject, isOpen]);
 
-  const handleGenerateFrame = async (frameType: "first" | "last") => {
+  const handleGenerateFrame = async () => {
     if (!projectId) return;
     
-    const prompt = frameType === "first" ? firstFramePrompt : lastFramePrompt;
-    if (!prompt.trim()) {
-      setError(`Please enter a prompt for the ${frameType} frame`);
+    if (!lastFramePrompt.trim()) {
+      setError("Please enter a prompt for the frame");
       return;
     }
 
     setError(null);
-    
-    if (frameType === "first") {
-      setIsGeneratingFirstFrame(true);
-    } else {
-      setIsGeneratingLastFrame(true);
-    }
+    setIsGeneratingLastFrame(true);
 
     try {
       // Create video project if it doesn't exist yet
@@ -168,17 +155,16 @@ export function VideoGeneratorDrawer({
         currentVideoId = newVideo.id;
       }
 
-      // Update metadata with prompts
+      // Update metadata with prompt
       await videoApi.updateVideo(projectId, currentVideoId, {
         metadata: {
           ...videoProject?.metadata,
-          first_frame_prompt: firstFramePrompt,
           last_frame_prompt: lastFramePrompt,
         }
       });
 
       const eventSource = new EventSource(
-        videoApi.getGenerateFramesStreamUrl(projectId, currentVideoId, frameType)
+        videoApi.getGenerateFramesStreamUrl(projectId, currentVideoId, "last")
       );
 
       eventSource.onmessage = (event) => {
@@ -187,28 +173,18 @@ export function VideoGeneratorDrawer({
         if (data.type === "progress") {
           setGenerationProgress(data.message);
         } else if (data.type === "frame_complete") {
-          if (data.frame === "first") {
-            setFirstFrame(data.imageUrl);
-            setIsGeneratingFirstFrame(false);
-          } else {
-            setLastFrame(data.imageUrl);
-            setIsGeneratingLastFrame(false);
-          }
+          setLastFrame(data.imageUrl);
+          setIsGeneratingLastFrame(false);
           setStatus("frames_ready");
           setHasChanges(true);
         } else if (data.type === "frame_error") {
-          setError(`Failed to generate ${data.frame} frame: ${data.message}`);
-          if (data.frame === "first") {
-            setIsGeneratingFirstFrame(false);
-          } else {
-            setIsGeneratingLastFrame(false);
-          }
+          setError(`Failed to generate frame: ${data.message}`);
+          setIsGeneratingLastFrame(false);
         } else if (data.type === "complete") {
           setGenerationProgress("");
           eventSource.close();
         } else if (data.type === "error") {
           setError(data.message);
-          setIsGeneratingFirstFrame(false);
           setIsGeneratingLastFrame(false);
           eventSource.close();
         }
@@ -216,7 +192,6 @@ export function VideoGeneratorDrawer({
 
       eventSource.onerror = () => {
         setError("Connection lost. Please try again.");
-        setIsGeneratingFirstFrame(false);
         setIsGeneratingLastFrame(false);
         setGenerationProgress("");
         eventSource.close();
@@ -224,13 +199,12 @@ export function VideoGeneratorDrawer({
 
     } catch (err: any) {
       setError(err.message || "Failed to generate frame");
-      setIsGeneratingFirstFrame(false);
       setIsGeneratingLastFrame(false);
     }
   };
 
   const handleGenerateVideo = async () => {
-    if (!projectId || !videoId || !firstFrame || !lastFrame) return;
+    if (!projectId || !videoId || !lastFrame) return;
 
     setIsGeneratingVideo(true);
     setError(null);
@@ -284,7 +258,6 @@ export function VideoGeneratorDrawer({
       const existingMetadata = videoProject?.metadata || {};
       const metadata = {
         ...existingMetadata,
-        first_frame_prompt: firstFramePrompt,
         last_frame_prompt: lastFramePrompt,
       };
 
@@ -292,7 +265,6 @@ export function VideoGeneratorDrawer({
         // Update existing
         savedVideo = await videoApi.updateVideo(projectId, videoId, {
           title,
-          first_frame_url: firstFrame,
           last_frame_url: lastFrame,
           video_url: videoUrl,
           status,
@@ -329,8 +301,8 @@ export function VideoGeneratorDrawer({
     }
   };
 
-  const isGenerating = isGeneratingFirstFrame || isGeneratingLastFrame || isGeneratingVideo;
-  const canGenerateVideo = firstFrame && lastFrame && !isGenerating;
+  const isGenerating = isGeneratingLastFrame || isGeneratingVideo;
+  const canGenerateVideo = lastFrame && !isGenerating;
 
   if (!isOpen) return null;
 
@@ -383,89 +355,16 @@ export function VideoGeneratorDrawer({
           </div>
         </div>
 
-        {/* Body - Split View */}
+        {/* Body - Single Frame View */}
         <div className="flex-1 overflow-y-auto p-6">
-          <div className="grid grid-cols-2 gap-8 h-full relative">
+          <div className="max-w-3xl mx-auto space-y-6">
             
-            {/* Vertical Dotted Line */}
-            <div className="absolute top-0 bottom-0 left-1/2 w-0 border-l-2 border-dashed border-ui-border-strong -translate-x-1/2" />
-
-            {/* Left Column: First Frame */}
+            {/* Frame Section */}
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <Badge color="blue" size="small">First Frame</Badge>
-                  <Text size="small" className="text-ui-fg-muted">Opening Shot</Text>
-                </div>
-              </div>
-
-              {/* Image Area */}
-              <div className="aspect-video rounded-xl border border-ui-border-base bg-ui-bg-subtle flex items-center justify-center relative overflow-hidden group">
-                {isGeneratingFirstFrame ? (
-                  <div className="text-center p-4">
-                    <div className="w-10 h-10 mx-auto mb-3 rounded-full border-4 border-ui-border-base border-t-blue-500 animate-spin" />
-                    <Text size="small" className="text-ui-fg-subtle">Generating...</Text>
-                  </div>
-                ) : firstFrame ? (
-                  <>
-                    <img 
-                      src={getImageUrl(firstFrame) || ""} 
-                      alt="First Frame" 
-                      className="w-full h-full object-contain"
-                    />
-                    <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                      <Button
-                        variant="secondary"
-                        onClick={() => handleGenerateFrame("first")}
-                        disabled={isGenerating}
-                        className="gap-2"
-                      >
-                        <RefreshIcon className="w-4 h-4" />
-                        Regenerate
-                      </Button>
-                    </div>
-                  </>
-                ) : (
-                  <div className="text-center p-6">
-                    <Photo className="w-12 h-12 text-ui-fg-muted mx-auto mb-2 opacity-50" />
-                    <Text className="text-ui-fg-muted">No frame generated</Text>
-                  </div>
-                )}
-              </div>
-
-              {/* Prompt Input */}
-              <div className="space-y-2">
-                <Text size="small" weight="plus" className="text-ui-fg-subtle">
-                  Prompt
-                </Text>
-                <Textarea
-                  value={firstFramePrompt}
-                  onChange={(e) => {
-                    setFirstFramePrompt(e.target.value);
-                    setHasChanges(true);
-                  }}
-                  placeholder="Describe the opening scene... (e.g., 'Wide cinematic shot of the factory entrance at sunrise')"
-                  rows={3}
-                  className="resize-none"
-                />
-                <Button 
-                  variant="secondary" 
-                  className="w-full mt-2"
-                  onClick={() => handleGenerateFrame("first")}
-                  disabled={isGenerating || !firstFramePrompt.trim()}
-                >
-                  <Sparkles className="w-4 h-4 mr-2" />
-                  Generate First Frame
-                </Button>
-              </div>
-            </div>
-
-            {/* Right Column: Last Frame */}
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Badge color="purple" size="small">Last Frame</Badge>
-                  <Text size="small" className="text-ui-fg-muted">Closing Shot</Text>
+                  <Badge color="purple" size="small">Video Frame</Badge>
+                  <Text size="small" className="text-ui-fg-muted">Promotional Image</Text>
                 </div>
               </div>
 
@@ -480,13 +379,13 @@ export function VideoGeneratorDrawer({
                   <>
                     <img 
                       src={getImageUrl(lastFrame) || ""} 
-                      alt="Last Frame" 
+                      alt="Video Frame" 
                       className="w-full h-full object-contain"
                     />
                     <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                       <Button
                         variant="secondary"
-                        onClick={() => handleGenerateFrame("last")}
+                        onClick={handleGenerateFrame}
                         disabled={isGenerating}
                         className="gap-2"
                       >
@@ -514,26 +413,18 @@ export function VideoGeneratorDrawer({
                     setLastFramePrompt(e.target.value);
                     setHasChanges(true);
                   }}
-                  placeholder={firstFrame ? "Describe the final scene... (e.g., 'Busy production floor with workers and machinery in action')" : "Generate the first frame to unlock this section"}
+                  placeholder="Describe the scene... (e.g., 'Busy production floor with workers and machinery in action, professional lighting')"
                   rows={3}
                   className="resize-none"
-                  disabled={!firstFrame}
                 />
-                {!firstFrame && (
-                  <div className="p-3 rounded-lg bg-ui-bg-subtle border border-ui-border-base">
-                    <Text size="small" className="text-ui-fg-muted">
-                      ⚠️ Please generate the first frame before creating the last frame
-                    </Text>
-                  </div>
-                )}
                 <Button 
                   variant="secondary" 
                   className="w-full mt-2"
-                  onClick={() => handleGenerateFrame("last")}
-                  disabled={isGenerating || !lastFramePrompt.trim() || !firstFrame}
+                  onClick={handleGenerateFrame}
+                  disabled={isGenerating || !lastFramePrompt.trim()}
                 >
                   <Sparkles className="w-4 h-4 mr-2" />
-                  Generate Last Frame
+                  Generate Frame
                 </Button>
               </div>
             </div>
@@ -542,7 +433,7 @@ export function VideoGeneratorDrawer({
 
           {/* Video Generation Section */}
           <div className="mt-8 pt-8 border-t border-ui-border-base">
-            {(firstFrame || lastFrame) && (
+            {lastFrame && (
               <div className="rounded-xl border-2 border-dashed border-ui-border-strong p-6 bg-gradient-to-br from-ui-bg-subtle to-ui-bg-base">
                 {videoUrl ? (
                   <div className="flex flex-col md:flex-row gap-6 items-center">
@@ -551,7 +442,7 @@ export function VideoGeneratorDrawer({
                         src={videoUrl} 
                         controls 
                         className="w-full"
-                        poster={getImageUrl(firstFrame) || undefined}
+                        poster={getImageUrl(lastFrame) || undefined}
                       />
                     </div>
                     <div className="w-full md:w-1/2 space-y-4">
@@ -600,16 +491,16 @@ export function VideoGeneratorDrawer({
                         <FilmIcon className="w-6 h-6 text-pink-500" />
                       </div>
                     </div>
-                    <Text weight="plus" className="mb-1">Generating Video Transition</Text>
-                    <Text size="small" className="text-ui-fg-subtle">{generationProgress || "Morphing frames..."}</Text>
+                    <Text weight="plus" className="mb-1">Generating Video</Text>
+                    <Text size="small" className="text-ui-fg-subtle">{generationProgress || "Creating video from frame..."}</Text>
                   </div>
                 ) : (
                   <div className="text-center py-4">
                     <Text weight="plus" className="mb-1 block">
-                      {canGenerateVideo ? "Ready to Generate Video" : "Generate Both Frames First"}
+                      {canGenerateVideo ? "Ready to Generate Video" : "Generate Frame First"}
                     </Text>
                     <Text size="small" className="text-ui-fg-subtle mb-4 block">
-                      Create a smooth AI transition between your opening and closing shots
+                      Create an AI-generated video from your frame
                     </Text>
                     <Button
                       variant="primary"

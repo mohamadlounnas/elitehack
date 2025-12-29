@@ -1798,9 +1798,9 @@ export function CompletedDashboard({
                 >
                   {/* Thumbnail */}
                   <div className="aspect-video bg-ui-bg-subtle relative overflow-hidden">
-                    {video.first_frame_url ? (
+                    {video.last_frame_url ? (
                       <img 
-                        src={video.first_frame_url} 
+                        src={video.last_frame_url} 
                         alt={video.title}
                         className="w-full h-full object-cover group-hover:scale-105 transition-transform"
                       />

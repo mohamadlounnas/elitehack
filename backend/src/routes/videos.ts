@@ -8,7 +8,6 @@ import path from "path";
 import { fileURLToPath } from "url";
 import dotenv from "dotenv";
 import axios from "axios";
-import { uploadImageToStorage } from "../utils/storage.js";
 
 dotenv.config();
 
@@ -26,7 +25,6 @@ interface VideoProject {
   project_id: string;
   title: string;
   prompt: string | null;
-  first_frame_url: string | null;
   last_frame_url: string | null;
   video_url: string | null;
   status: string;
@@ -128,8 +126,8 @@ router.patch("/:projectId/videos/:videoId", async (req, res) => {
     const { projectId, videoId } = req.params;
     const updates = req.body;
 
-    // Only allow updating specific fields
-    const allowedFields = ["title", "prompt", "first_frame_url", "last_frame_url", "video_url", "status", "metadata"];
+    // Only allow updating specific fields (first_frame_url removed)
+    const allowedFields = ["title", "prompt", "last_frame_url", "video_url", "status", "metadata"];
     const filteredUpdates: any = {};
     for (const key of allowedFields) {
       if (updates[key] !== undefined) {
@@ -183,11 +181,12 @@ router.delete("/:projectId/videos/:videoId", async (req, res) => {
 });
 
 /**
- * Generate frames for a video project (SSE streaming)
+ * Generate last frame for a video project (SSE streaming)
+ * Note: First frame functionality has been removed
  */
 router.get("/:projectId/videos/:videoId/generate-frames/stream", async (req, res) => {
   const { projectId, videoId } = req.params;
-  const frameType = req.query.frame as string || "both"; // "first", "last", or "both"
+  const frameType = req.query.frame as string || "last"; // Only "last" frame is supported now
 
   // Set up SSE
   res.setHeader("Content-Type", "text/event-stream");
@@ -201,6 +200,12 @@ router.get("/:projectId/videos/:videoId/generate-frames/stream", async (req, res
   try {
     if (!genAI) {
       sendEvent("error", { message: "AI service not configured" });
+      return res.end();
+    }
+
+    // Only allow "last" frame generation
+    if (frameType !== "last") {
+      sendEvent("error", { message: "Only last frame generation is supported" });
       return res.end();
     }
 
@@ -267,14 +272,48 @@ Key Equipment: ${assets.map((a: any) => a.name).join(", ")}
       model: "models/gemini-3-pro-image-preview",
     });
 
-    // Helper function to save image to Supabase Storage and return public URL
-    const saveImageToStorage = async (projectId: string, frameType: string, dataUrl: string): Promise<string> => {
+    // Helper function to upload image using /tmp/upload API
+    const uploadImageToTmpStorage = async (dataUrl: string): Promise<string> => {
       try {
-        const filename = `${frameType}_frame_${Date.now()}.png`;
-        const publicUrl = await uploadImageToStorage(projectId, filename, dataUrl, "image/png");
-        return publicUrl;
+        // Convert data URL to blob
+        const base64Data = dataUrl.split(",")[1];
+        if (!base64Data) {
+          throw new Error("Invalid data URL format");
+        }
+        
+        const buffer = Buffer.from(base64Data, "base64");
+        const blob = new Blob([buffer], { type: "image/png" });
+        
+        // Create FormData
+        const formData = new FormData();
+        formData.append("file", blob, `frame_${Date.now()}.png`);
+
+        // Upload to /tmp/upload API
+        const storageServerUrl = process.env.STORAGE_SERVER_URL || "http://localhost:3333";
+        const uploadResponse = await fetch(`${storageServerUrl}/api/v1/tmp/upload`, {
+          method: "POST",
+          body: formData,
+        });
+
+        if (!uploadResponse.ok) {
+          const errorText = await uploadResponse.text();
+          throw new Error(`Upload failed: ${uploadResponse.statusText} - ${errorText}`);
+        }
+
+        const uploadResult = await uploadResponse.json() as { url?: string; success?: boolean };
+        
+        if (!uploadResult.success || !uploadResult.url) {
+          throw new Error("Upload API returned invalid response");
+        }
+
+        logger.info("Image uploaded to tmp storage", {
+          url: uploadResult.url,
+          videoId,
+        });
+
+        return uploadResult.url;
       } catch (error: any) {
-        logger.error("Error saving image to Supabase Storage", error);
+        logger.error("Error uploading image to tmp storage", error);
         throw error;
       }
     };
@@ -342,93 +381,47 @@ Key Equipment: ${assets.map((a: any) => a.name).join(", ")}
     // Process logo for context
     const logoImage = processImageToBase64(project.logo_url);
 
-    const framesToGenerate = frameType === "both" ? ["first", "last"] : [frameType];
-    const results: { first_frame_url?: string; last_frame_url?: string } = {};
+    sendEvent("progress", { 
+      message: "Generating last frame...",
+      frame: "last",
+    });
 
-    for (const frame of framesToGenerate) {
-      sendEvent("progress", { 
-        message: `Generating ${frame} frame...`,
-        frame,
+    // Get prompt from metadata, fall back to global prompt, then default
+    const userPrompt = videoProject.metadata?.last_frame_prompt || videoProject.prompt || "Create a professional factory production floor view";
+
+    let framePrompt: string;
+    let imageParts: any[] = [];
+
+    // Add logo to context
+    if (logoImage) {
+      imageParts.push({
+        inlineData: {
+          mimeType: logoImage.mimeType,
+          data: logoImage.base64Data,
+        },
       });
+    }
 
-      // Get specific prompt from metadata, fall back to global prompt, then default
-      const specificPrompt = frame === "first" 
-        ? videoProject.metadata?.first_frame_prompt 
-        : videoProject.metadata?.last_frame_prompt;
-      
-      const userPrompt = specificPrompt || videoProject.prompt || (frame === "first" ? "Create a professional factory entrance view" : "Create a professional factory production floor view");
+    // Process layout plan image
+    const layoutImageUrl = floorPlan?.file_path;
+    const layoutImage = processImageToBase64(layoutImageUrl);
+    if (layoutImage) {
+      imageParts.push({
+        inlineData: {
+          mimeType: layoutImage.mimeType,
+          data: layoutImage.base64Data,
+        },
+      });
+    }
 
-      let framePrompt: string;
-      let imageParts: any[] = [];
-
-      // Add logo to context for both frames
-      if (logoImage) {
-        imageParts.push({
-          inlineData: {
-            mimeType: logoImage.mimeType,
-            data: logoImage.base64Data,
-          },
-        });
-      }
-
-      if (frame === "first") {
-        framePrompt = `Create a cinematic opening shot for a factory promotional video.
+    framePrompt = `Create a cinematic shot for a factory promotional video.
 
 ${factoryContext}
 
 User Description: ${userPrompt}
 
+${layoutImage ? "IMPORTANT: The factory layout plan is attached - use it to understand the facility structure and ensure accuracy." : ""}
 ${logoImage ? "BRAND CONTEXT: The company logo is attached - understand the brand identity, colors, and style. The video should reflect this brand aesthetic." : ""}
-
-Requirements:
-- Photorealistic, high-quality image
-- Wide establishing shot showing the factory exterior or impressive interior entrance
-- Professional lighting, early morning or golden hour aesthetic
-- Clean, modern industrial architecture
-- Should feel like the opening frame of a high-budget corporate video
-- Pure white or transparent background elements where applicable
-- 16:9 aspect ratio composition
-- DO NOT include any text, logos, or overlays (the logo is for reference only, do not embed it in the image)`;
-      } else {
-        // For last frame, include layout plan and first frame as references
-        const layoutImageUrl = floorPlan?.file_path;
-        const firstFrameImageUrl = videoProject.first_frame_url;
-
-        // Process first frame image
-        const firstFrameImage = processImageToBase64(firstFrameImageUrl);
-        if (firstFrameImage) {
-          imageParts.push({
-            inlineData: {
-              mimeType: firstFrameImage.mimeType,
-              data: firstFrameImage.base64Data,
-            },
-          });
-        }
-
-        // Process layout plan image
-        const layoutImage = processImageToBase64(layoutImageUrl);
-        if (layoutImage) {
-          imageParts.push({
-            inlineData: {
-              mimeType: layoutImage.mimeType,
-              data: layoutImage.base64Data,
-            },
-          });
-        }
-
-        framePrompt = `Create a cinematic closing shot for a factory promotional video.
-
-${factoryContext}
-
-User Description: ${userPrompt}
-
-IMPORTANT CONTEXT:
-- This is the CLOSING shot that should follow the opening shot (first frame)
-- The first frame image is attached - use it as a reference for style, lighting, and visual continuity
-${layoutImage ? "- The factory layout plan is attached - use it to understand the facility structure and ensure accuracy" : ""}
-${logoImage ? "- The company logo is attached - understand the brand identity, colors, and style. The video should reflect this brand aesthetic." : ""}
-- This closing shot should show the interior production floor in action
-- It should feel like a natural continuation from the opening shot
 
 Requirements:
 - Photorealistic, high-quality image  
@@ -436,85 +429,68 @@ Requirements:
 - Dynamic angle showing the scale and capability of the facility
 - Warm, inviting lighting suggesting productivity and success
 - Workers visible but not the main focus
-- Should feel like the final impressive shot before the company logo appears
-- Must be consistent with the style and setting of the first frame
+- Should feel like an impressive shot for a promotional video
 - 16:9 aspect ratio composition
 - DO NOT include any text, logos, or overlays (the logo is for reference only, do not embed it in the image)`;
+
+    try {
+      // Combine text prompt with image parts
+      const contentParts = [{ text: framePrompt }, ...imageParts];
+      const response = await model.generateContent(contentParts);
+      const parts = response.response.candidates?.[0]?.content?.parts || [];
+      
+      let imageUrl: string | null = null;
+      
+      for (const part of parts) {
+        if ((part as any).inlineData) {
+          const inlineData = (part as any).inlineData;
+          imageUrl = `data:${inlineData.mimeType};base64,${inlineData.data}`;
+          break;
+        }
       }
 
-      try {
-        // Combine text prompt with image parts
-        const contentParts = [{ text: framePrompt }, ...imageParts];
-        const response = await model.generateContent(contentParts);
-        const parts = response.response.candidates?.[0]?.content?.parts || [];
-        
-        let imageUrl: string | null = null;
-        
-        for (const part of parts) {
-          if ((part as any).inlineData) {
-            const inlineData = (part as any).inlineData;
-            imageUrl = `data:${inlineData.mimeType};base64,${inlineData.data}`;
-            break;
-          }
-        }
+      if (imageUrl) {
+        // Upload image using /tmp/upload API and get public URL
+        try {
+          const publicUrl = await uploadImageToTmpStorage(imageUrl);
+          
+          // Update video project with generated frame
+          await supabase
+            .from("video_projects")
+            .update({
+              last_frame_url: publicUrl,
+              status: "frames_ready",
+            })
+            .eq("id", videoId);
 
-        if (imageUrl) {
-          // Save image to Supabase Storage and get public URL
-          try {
-            const publicUrl = await saveImageToStorage(projectId, frame, imageUrl);
-            
-            if (frame === "first") {
-              results.first_frame_url = publicUrl;
-            } else {
-              results.last_frame_url = publicUrl;
-            }
-
-            // Send the public URL
-            sendEvent("frame_complete", {
-              frame,
-              imageUrl: publicUrl,
-            });
-          } catch (saveError: any) {
-            logger.error(`Error saving ${frame} frame to Supabase Storage`, saveError);
-            sendEvent("frame_error", {
-              frame,
-              message: `Failed to save frame: ${saveError.message}`,
-            });
-          }
-        } else {
+          // Send the public URL
+          sendEvent("frame_complete", {
+            frame: "last",
+            imageUrl: publicUrl,
+          });
+        } catch (saveError: any) {
+          logger.error("Error uploading last frame", saveError);
           sendEvent("frame_error", {
-            frame,
-            message: "Failed to generate frame image",
+            frame: "last",
+            message: `Failed to upload frame: ${saveError.message}`,
           });
         }
-      } catch (frameError: any) {
-        logger.error(`Error generating ${frame} frame`, frameError);
+      } else {
         sendEvent("frame_error", {
-          frame,
-          message: frameError.message,
+          frame: "last",
+          message: "Failed to generate frame image",
         });
       }
+    } catch (frameError: any) {
+      logger.error("Error generating last frame", frameError);
+      sendEvent("frame_error", {
+        frame: "last",
+        message: frameError.message,
+      });
     }
-
-    // Update video project with generated frames
-    const updateData: any = {
-      status: "frames_ready",
-    };
-    if (results.first_frame_url) {
-      updateData.first_frame_url = results.first_frame_url;
-    }
-    if (results.last_frame_url) {
-      updateData.last_frame_url = results.last_frame_url;
-    }
-
-    await supabase
-      .from("video_projects")
-      .update(updateData)
-      .eq("id", videoId);
 
     sendEvent("complete", {
       message: "Frame generation complete",
-      ...results,
     });
 
     res.end();
@@ -568,61 +544,34 @@ router.get("/:projectId/videos/:videoId/generate-video/stream", async (req, res)
 
     sendEvent("progress", { message: "Preparing video generation...", progress: 5 });
 
-    // Download test image and upload it via the upload API
-    sendEvent("progress", { message: "Downloading and uploading test image...", progress: 8 });
-    
-    let testImageUrl: string;
-    try {
-      // Download the Freepik image
-      const imageResponse = await axios.get(
-        "https://img.freepik.com/free-photo/factory-workshop-interior-machines-glass-production-background_645730-396.jpg?semt=ais_hybrid&w=740&q=80",
-        { responseType: "arraybuffer" }
-      );
+    // Get the last frame URL from the video project
+    const { data: videoProjectWithFrame } = await supabase
+      .from("video_projects")
+      .select("last_frame_url")
+      .eq("id", videoId)
+      .eq("project_id", projectId)
+      .single();
 
-      // Upload via the upload API using native FormData (Node.js 18+)
-      const formData = new FormData();
-      const blob = new Blob([Buffer.from(imageResponse.data)], { type: "image/jpeg" });
-      formData.append("file", blob, "factory_test_image.jpg");
-
-      // Use the storage server (separate service)
-      const storageServerUrl = process.env.STORAGE_SERVER_URL || "http://localhost:3333";
-      const uploadResponse = await fetch(`${storageServerUrl}/api/v1/tmp/upload`, {
-        method: "POST",
-        body: formData,
-      });
-
-      if (!uploadResponse.ok) {
-        throw new Error(`Upload failed: ${uploadResponse.statusText}`);
-      }
-
-      const uploadResult = await uploadResponse.json() as { url: string };
-      testImageUrl = uploadResult.url;
-      
-      logger.info("Test image uploaded successfully", {
-        imageUrl: testImageUrl,
-        videoId,
-      });
-      
-      sendEvent("progress", { message: "Test image uploaded", progress: 10 });
-    } catch (uploadError: any) {
-      logger.error("Failed to upload test image", uploadError);
-      // Fallback to Unsplash image
-      testImageUrl = "https://images.unsplash.com/photo-1581091226825-a6a2a5aee158?w=800&q=80";
-      logger.info("Using fallback image URL", { url: testImageUrl });
+    if (!videoProjectWithFrame?.last_frame_url) {
+      sendEvent("error", { message: "Last frame not found. Please generate the last frame first." });
+      return res.end();
     }
+
+    const lastFrameUrl = videoProjectWithFrame.last_frame_url;
+    sendEvent("progress", { message: "Using last frame for video generation...", progress: 10 });
     
     const videoPrompt = "Smooth cinematic transition showing the factory production floor in action, professional lighting, dynamic camera movement";
 
     sendEvent("progress", { message: "Creating video generation task...", progress: 15 });
 
-    // Step 1: Create generation task with Kie.ai using hardcoded test image
+    // Step 1: Create generation task with Kie.ai using the last frame
     const createTaskResponse = await axios.post(
       "https://api.kie.ai/api/v1/jobs/createTask",
       {
         model: "hailuo/2-3-image-to-video-standard",
         input: {
           prompt: videoPrompt,
-          image_url: testImageUrl,
+          image_url: lastFrameUrl,
           duration: "6", // 6 seconds
           resolution: "1080P", // High quality
         },
