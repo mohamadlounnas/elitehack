@@ -10,6 +10,7 @@ import {
   Text,
   Button,
   Badge,
+  Container,
   clx,
 } from "@medusajs/ui";
 import {
@@ -28,9 +29,11 @@ import {
   Swatch,
 } from "@medusajs/icons";
 import type { Asset, Supplier, AssetSupplier } from "../../types";
+import { assetsApi } from "../../services/api";
 
 interface AssetDetailDrawerProps {
   asset: Asset | null;
+  projectId: string;
   allSuppliers: Supplier[];
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -51,12 +54,36 @@ interface SupplierScore {
 
 export function AssetDetailDrawer({
   asset,
+  projectId,
   allSuppliers,
   open,
   onOpenChange,
 }: AssetDetailDrawerProps) {
   const [activeTab, setActiveTab] = useState("details");
   const [supplierScores, setSupplierScores] = useState<SupplierScore[]>([]);
+  const [fullAsset, setFullAsset] = useState<Asset | null>(asset);
+  const [isLoadingAsset, setIsLoadingAsset] = useState(false);
+
+  // Load full asset with image when drawer opens
+  useEffect(() => {
+    if (open && asset && !fullAsset?.image_url) {
+      setIsLoadingAsset(true);
+      assetsApi.getAsset(projectId, asset.id)
+        .then((loadedAsset) => {
+          setFullAsset(loadedAsset);
+        })
+        .catch((error) => {
+          console.error("Error loading asset with image:", error);
+          // Fallback to asset without image
+          setFullAsset(asset);
+        })
+        .finally(() => {
+          setIsLoadingAsset(false);
+        });
+    } else if (asset) {
+      setFullAsset(asset);
+    }
+  }, [open, asset?.id, projectId]);
 
   // Reset to details tab when asset changes
   useEffect(() => {
@@ -65,7 +92,7 @@ export function AssetDetailDrawer({
 
   // Calculate supplier scores when asset changes
   useEffect(() => {
-    if (!asset || !allSuppliers.length) {
+    if (!fullAsset || !allSuppliers.length) {
       setSupplierScores([]);
       return;
     }
@@ -73,13 +100,13 @@ export function AssetDetailDrawer({
     // Find suppliers associated with this asset
     const assetSuppliers = allSuppliers.filter(supplier => {
       // Check if supplier has any asset_suppliers linked to this asset
-      return supplier.asset_suppliers?.some(as => as.asset_id === asset.id) ||
+      return supplier.asset_suppliers?.some(as => as.asset_id === fullAsset.id) ||
         supplier.products?.some(p => 
-          asset.name.toLowerCase().includes(p.toLowerCase()) ||
-          p.toLowerCase().includes(asset.name.toLowerCase())
+          fullAsset.name.toLowerCase().includes(p.toLowerCase()) ||
+          p.toLowerCase().includes(fullAsset.name.toLowerCase())
         ) ||
         supplier.specializations?.some(s =>
-          asset.type?.toLowerCase().includes(s.toLowerCase())
+          fullAsset.type?.toLowerCase().includes(s.toLowerCase())
         );
     });
 
@@ -88,10 +115,10 @@ export function AssetDetailDrawer({
 
     // Calculate scores for each supplier
     const scores: SupplierScore[] = relevantSuppliers.map(supplier => {
-      const assetSupplier = supplier.asset_suppliers?.find(as => as.asset_id === asset.id);
+      const assetSupplier = supplier.asset_suppliers?.find(as => as.asset_id === fullAsset.id);
       
       // Calculate individual scores (0-100)
-      const priceScore = calculatePriceScore(assetSupplier?.quote_price, asset.specifications?.estimated_cost_usd);
+      const priceScore = calculatePriceScore(assetSupplier?.quote_price, fullAsset.specifications?.estimated_cost_usd);
       const deliveryScore = calculateDeliveryScore(assetSupplier?.lead_time_days);
       const qualityScore = calculateQualityScore(supplier);
       const reliabilityScore = calculateReliabilityScore(supplier);
@@ -123,11 +150,13 @@ export function AssetDetailDrawer({
     // Sort by total score descending
     scores.sort((a, b) => b.totalScore - a.totalScore);
     setSupplierScores(scores);
-  }, [asset, allSuppliers]);
+  }, [fullAsset, allSuppliers]);
 
   if (!asset) return null;
 
-  const specs = asset.specifications || {};
+  // Use fullAsset if available, otherwise fallback to asset
+  const displayAsset = fullAsset || asset;
+  const specs = displayAsset.specifications || {};
   const estimatedCost = specs.estimated_cost_usd || 0;
 
   // Check if we have any specs to show
@@ -142,10 +171,14 @@ export function AssetDetailDrawer({
             <div className="flex items-start gap-x-4">
               {/* Asset Image */}
               <div className="w-20 h-20 rounded-lg overflow-hidden flex-shrink-0 bg-ui-bg-subtle border border-ui-border-base">
-                {asset.image_url ? (
+                {isLoadingAsset ? (
+                  <div className="w-full h-full flex items-center justify-center">
+                    <div className="w-6 h-6 border-2 border-ui-border-base border-t-ui-fg-interactive rounded-full animate-spin" />
+                  </div>
+                ) : displayAsset.image_url ? (
                   <img
-                    src={asset.image_url}
-                    alt={asset.name}
+                    src={displayAsset.image_url}
+                    alt={displayAsset.name}
                     className="w-full h-full object-cover"
                   />
                 ) : (
@@ -156,15 +189,15 @@ export function AssetDetailDrawer({
               </div>
               {/* Asset Info */}
               <div className="flex-1 min-w-0">
-                <Heading level="h2" className="truncate">{asset.name}</Heading>
+                <Heading level="h2" className="truncate">{displayAsset.name}</Heading>
                 <div className="flex items-center gap-x-2 mt-2 flex-wrap">
-                  <Badge color="purple" size="small">{asset.type || "Equipment"}</Badge>
+                  <Badge color="purple" size="small">{displayAsset.type || "Equipment"}</Badge>
                   {estimatedCost > 0 && (
                     <Badge color="green" size="small">
                       ${estimatedCost.toLocaleString()}
                     </Badge>
                   )}
-                  {asset.image_generated && (
+                  {displayAsset.image_generated && (
                     <Badge color="blue" size="small">Image Generated</Badge>
                   )}
                 </div>
@@ -181,6 +214,12 @@ export function AssetDetailDrawer({
                 active={activeTab === "details"} 
                 onClick={() => setActiveTab("details")}
                 label="Details"
+              />
+              <TabButton 
+                active={activeTab === "image"} 
+                onClick={() => setActiveTab("image")}
+                label="Image"
+                disabled={!displayAsset.image_url && !isLoadingAsset}
               />
               <TabButton 
                 active={activeTab === "suppliers"} 
@@ -207,19 +246,19 @@ export function AssetDetailDrawer({
                     Description
                   </Text>
                   <Text className="text-ui-fg-base">
-                    {asset.description || "No description available"}
+                    {displayAsset.description || "No description available"}
                   </Text>
                 </div>
 
                 {/* Appearance */}
-                {asset.appearance && (
+                {displayAsset.appearance && (
                   <div>
                     <Text weight="plus" size="small" className="text-ui-fg-muted mb-2 uppercase tracking-wider">
                       Appearance
                     </Text>
                     <div className="bg-ui-bg-subtle rounded-lg p-3 border border-ui-border-base">
                       <Text size="small" className="text-ui-fg-subtle italic">
-                        "{asset.appearance}"
+                        "{displayAsset.appearance}"
                       </Text>
                     </div>
                   </div>
@@ -231,39 +270,63 @@ export function AssetDetailDrawer({
                     Technical Specifications
                   </Text>
                   {hasSpecs ? (
-                    <div className="grid grid-cols-2 gap-3">
+                    <Container className="p-0 divide-y divide-ui-border-base">
                       {specs.manufacturer && (
-                        <SpecCard label="Manufacturer" value={specs.manufacturer} icon="🏭" />
+                        <div className="px-4 py-3 flex justify-between">
+                          <Text size="small" className="text-ui-fg-muted">Manufacturer</Text>
+                          <Text size="small" weight="plus">{specs.manufacturer}</Text>
+                        </div>
                       )}
                       {specs.model && (
-                        <SpecCard label="Model" value={specs.model} icon="🏷️" />
+                        <div className="px-4 py-3 flex justify-between">
+                          <Text size="small" className="text-ui-fg-muted">Model</Text>
+                          <Text size="small" weight="plus">{specs.model}</Text>
+                        </div>
                       )}
                       {specs.power_kw && (
-                        <SpecCard label="Power" value={`${specs.power_kw} kW`} icon="⚡" />
+                        <div className="px-4 py-3 flex justify-between">
+                          <Text size="small" className="text-ui-fg-muted">Power</Text>
+                          <Text size="small" weight="plus">{specs.power_kw} kW</Text>
+                        </div>
                       )}
                       {specs.voltage && (
-                        <SpecCard label="Voltage" value={specs.voltage} icon="🔌" />
+                        <div className="px-4 py-3 flex justify-between">
+                          <Text size="small" className="text-ui-fg-muted">Voltage</Text>
+                          <Text size="small" weight="plus">{specs.voltage}</Text>
+                        </div>
                       )}
                       {specs.dimensions && (
-                        <SpecCard label="Dimensions" value={specs.dimensions} icon="📐" />
+                        <div className="px-4 py-3 flex justify-between">
+                          <Text size="small" className="text-ui-fg-muted">Dimensions</Text>
+                          <Text size="small" weight="plus">{specs.dimensions}</Text>
+                        </div>
                       )}
                       {specs.weight_kg && (
-                        <SpecCard label="Weight" value={`${specs.weight_kg} kg`} icon="⚖️" />
+                        <div className="px-4 py-3 flex justify-between">
+                          <Text size="small" className="text-ui-fg-muted">Weight</Text>
+                          <Text size="small" weight="plus">{specs.weight_kg} kg</Text>
+                        </div>
                       )}
                       {specs.capacity && (
-                        <SpecCard label="Capacity" value={specs.capacity} icon="📦" />
+                        <div className="px-4 py-3 flex justify-between">
+                          <Text size="small" className="text-ui-fg-muted">Capacity</Text>
+                          <Text size="small" weight="plus">{specs.capacity}</Text>
+                        </div>
                       )}
                       {specs.warranty && (
-                        <SpecCard label="Warranty" value={specs.warranty} icon="🛡️" />
+                        <div className="px-4 py-3 flex justify-between">
+                          <Text size="small" className="text-ui-fg-muted">Warranty</Text>
+                          <Text size="small" weight="plus">{specs.warranty}</Text>
+                        </div>
                       )}
-                    </div>
+                    </Container>
                   ) : (
-                    <div className="bg-ui-bg-subtle rounded-lg p-4 border border-dashed border-ui-border-base text-center">
+                    <Container className="p-4 text-center">
                       <Swatch className="w-6 h-6 text-ui-fg-muted mx-auto mb-2" />
                       <Text size="small" className="text-ui-fg-muted">
                         No technical specifications available yet
                       </Text>
-                    </div>
+                    </Container>
                   )}
                 </div>
 
@@ -273,45 +336,96 @@ export function AssetDetailDrawer({
                     Cost Estimates
                   </Text>
                   {estimatedCost > 0 ? (
-                    <div className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-lg p-4 border border-green-200">
-                      <div className="space-y-3">
-                        <div className="flex justify-between items-center">
-                          <Text size="small" className="text-green-700">Equipment Cost</Text>
-                          <Text size="small" weight="plus" className="text-green-800">
-                            ${estimatedCost.toLocaleString()}
-                          </Text>
-                        </div>
-                        <div className="flex justify-between items-center">
-                          <Text size="small" className="text-green-600">Installation (est. 10%)</Text>
-                          <Text size="small" className="text-green-700">
-                            ${Math.round(estimatedCost * 0.1).toLocaleString()}
-                          </Text>
-                        </div>
-                        <div className="flex justify-between items-center">
-                          <Text size="small" className="text-green-600">Annual Maintenance (est. 5%)</Text>
-                          <Text size="small" className="text-green-700">
-                            ${Math.round(estimatedCost * 0.05).toLocaleString()}/yr
-                          </Text>
-                        </div>
-                        <div className="border-t border-green-300 pt-3 mt-2">
-                          <div className="flex justify-between items-center">
-                            <Text weight="plus" className="text-green-800">Total First Year</Text>
-                            <Text weight="plus" className="text-green-900 text-lg">
-                              ${Math.round(estimatedCost * 1.15).toLocaleString()}
-                            </Text>
-                          </div>
-                        </div>
+                    <Container className="p-0 divide-y divide-ui-border-base">
+                      <div className="px-4 py-3 flex justify-between">
+                        <Text size="small" className="text-ui-fg-muted">Equipment Cost</Text>
+                        <Text size="small" weight="plus">
+                          ${estimatedCost.toLocaleString()}
+                        </Text>
                       </div>
-                    </div>
+                      <div className="px-4 py-3 flex justify-between">
+                        <Text size="small" className="text-ui-fg-muted">Installation (est. 10%)</Text>
+                        <Text size="small">
+                          ${Math.round(estimatedCost * 0.1).toLocaleString()}
+                        </Text>
+                      </div>
+                      <div className="px-4 py-3 flex justify-between">
+                        <Text size="small" className="text-ui-fg-muted">Annual Maintenance (est. 5%)</Text>
+                        <Text size="small">
+                          ${Math.round(estimatedCost * 0.05).toLocaleString()}/yr
+                        </Text>
+                      </div>
+                      <div className="px-4 py-3 flex justify-between bg-ui-bg-subtle">
+                        <Text size="small" weight="plus">Total First Year</Text>
+                        <Text size="small" weight="plus">
+                          ${Math.round(estimatedCost * 1.15).toLocaleString()}
+                        </Text>
+                      </div>
+                    </Container>
                   ) : (
-                    <div className="bg-ui-bg-subtle rounded-lg p-4 border border-dashed border-ui-border-base text-center">
+                    <Container className="p-4 text-center">
                       <CurrencyDollar className="w-6 h-6 text-ui-fg-muted mx-auto mb-2" />
                       <Text size="small" className="text-ui-fg-muted">
                         Cost estimate not available
                       </Text>
-                    </div>
+                    </Container>
                   )}
                 </div>
+              </div>
+            )}
+
+            {/* Image Tab */}
+            {activeTab === "image" && (
+              <div className="space-y-4">
+                {isLoadingAsset ? (
+                  <div className="flex items-center justify-center py-12">
+                    <div className="text-center">
+                      <div className="w-12 h-12 border-4 border-ui-border-base border-t-ui-fg-interactive rounded-full animate-spin mx-auto mb-4" />
+                      <Text className="text-ui-fg-muted">Loading image...</Text>
+                    </div>
+                  </div>
+                ) : displayAsset.image_url ? (
+                  <div className="space-y-4">
+                    <div className="bg-ui-bg-subtle rounded-lg border border-ui-border-base overflow-hidden">
+                      <div className="aspect-video bg-ui-bg-base flex items-center justify-center p-4">
+                        <img
+                          src={displayAsset.image_url}
+                          alt={displayAsset.name}
+                          className="max-w-full max-h-full object-contain"
+                        />
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between p-4 bg-ui-bg-subtle rounded-lg border border-ui-border-base">
+                      <div>
+                        <Text weight="plus" size="small" className="text-ui-fg-muted mb-1">
+                          Asset Image
+                        </Text>
+                        <Text size="xsmall" className="text-ui-fg-subtle">
+                          {displayAsset.image_generated ? "AI Generated" : "Reference Image"}
+                        </Text>
+                      </div>
+                      <Button variant="secondary" size="small" asChild>
+                        <a
+                          href={displayAsset.image_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center gap-x-2"
+                        >
+                          <Photo className="w-4 h-4" />
+                          Open Full Size
+                        </a>
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-center py-12">
+                    <Photo className="w-16 h-16 text-ui-fg-muted mx-auto mb-4" />
+                    <Text weight="plus" className="text-ui-fg-muted mb-2">No Image Available</Text>
+                    <Text size="small" className="text-ui-fg-subtle">
+                      This asset doesn't have an image yet
+                    </Text>
+                  </div>
+                )}
               </div>
             )}
 
@@ -492,14 +606,14 @@ export function AssetDetailDrawer({
         </Drawer.Body>
 
         <Drawer.Footer>
-          <div className="flex items-center justify-between w-full">
+            <div className="flex items-center justify-between w-full">
             <Button variant="secondary" onClick={() => onOpenChange(false)}>
               Close
             </Button>
             <div className="flex gap-x-2">
-              {asset.image_url && (
+              {displayAsset.image_url && (
                 <Button variant="secondary" asChild>
-                  <a href={asset.image_url} target="_blank" rel="noopener noreferrer">
+                  <a href={displayAsset.image_url} target="_blank" rel="noopener noreferrer">
                     <Photo className="mr-2 w-4 h-4" />
                     View Image
                   </a>
@@ -554,17 +668,6 @@ function TabButton({
   );
 }
 
-function SpecCard({ label, value, icon }: { label: string; value: string; icon: string }) {
-  return (
-    <div className="bg-white border border-ui-border-base rounded-lg p-3 hover:border-ui-border-strong transition-colors">
-      <div className="flex items-center gap-x-2 mb-1">
-        <span className="text-sm">{icon}</span>
-        <Text size="xsmall" className="text-ui-fg-muted">{label}</Text>
-      </div>
-      <Text size="small" weight="plus" className="truncate">{value}</Text>
-    </div>
-  );
-}
 
 function SupplierCard({
   supplierScore,

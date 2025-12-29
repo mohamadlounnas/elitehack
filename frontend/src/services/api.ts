@@ -86,6 +86,28 @@ export const assetsApi = {
     const { data } = await api.get<Asset[]>(`/projects/${projectId}/assets`);
     return data;
   },
+
+  getAsset: async (projectId: string, assetId: string): Promise<Asset> => {
+    const { data } = await api.get<Asset>(`/projects/${projectId}/assets/${assetId}`);
+    return data;
+  },
+
+  generate3DModel: async (projectId: string, assetId: string): Promise<{ success: boolean; meshy_id: string }> => {
+    const { data } = await api.post<{ success: boolean; meshy_id: string }>(
+      `/projects/${projectId}/assets/${assetId}/generate-3d`
+    );
+    return data;
+  },
+
+  check3DStatus: async (
+    projectId: string,
+    assetId: string
+  ): Promise<{ status: string; progress: number; model_url?: string | null }> => {
+    const { data } = await api.get<{ status: string; progress: number; model_url?: string | null }>(
+      `/projects/${projectId}/assets/${assetId}/check-3d-status`
+    );
+    return data;
+  },
 };
 
 export const dataApi = {

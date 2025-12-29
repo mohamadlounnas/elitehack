@@ -16,13 +16,15 @@ const STORAGE_BUCKET = "project-files"; // Bucket name for project files
  * @param filename - Filename for the image
  * @param imageData - Either a data URL (data:image/png;base64,...) or a Buffer
  * @param contentType - MIME type (default: image/png)
+ * @param subdirectory - Optional subdirectory (default: "videos")
  * @returns Public URL of the uploaded image
  */
 export async function uploadImageToStorage(
   projectId: string,
   filename: string,
   imageData: string | Buffer,
-  contentType: string = "image/png"
+  contentType: string = "image/png",
+  subdirectory: string = "videos"
 ): Promise<string> {
   try {
     let buffer: Buffer;
@@ -40,8 +42,8 @@ export async function uploadImageToStorage(
       throw new Error("Invalid image data format");
     }
 
-    // Create path: videos/{projectId}/{filename}
-    const filePath = `videos/${projectId}/${filename}`;
+    // Create path: {subdirectory}/{projectId}/{filename}
+    const filePath = `${subdirectory}/${projectId}/${filename}`;
 
     // Try using Supabase client first (handles auth better)
     // The supabase client is already initialized with service role key
@@ -166,6 +168,62 @@ export async function uploadImageToStorage(
 }
 
 /**
+ * Update bucket allowed MIME types
+ * This can be called to add new MIME types to an existing bucket
+ */
+export async function updateBucketMimeTypes(): Promise<void> {
+  try {
+    const supabaseUrl = process.env.SUPABASE_URL;
+    const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    
+    if (!supabaseUrl || !supabaseServiceRoleKey) {
+      logger.warn("Missing Supabase credentials. Cannot update bucket MIME types.");
+      return;
+    }
+
+    const apiUrl = `${supabaseUrl}/storage/v1/bucket/${STORAGE_BUCKET}`;
+    
+    // Update bucket to allow GLB MIME types
+    const updateResponse = await fetch(apiUrl, {
+      method: "PATCH",
+      headers: {
+        "Authorization": `Bearer ${supabaseServiceRoleKey}`,
+        "apikey": supabaseServiceRoleKey,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        allowed_mime_types: [
+          "image/png", 
+          "image/jpeg", 
+          "image/jpg", 
+          "image/webp", 
+          "image/gif", 
+          "model/gltf+binary", 
+          "model/gltf+json", 
+          "application/octet-stream"
+        ],
+      }),
+    });
+
+    if (updateResponse.ok) {
+      logger.info(`Bucket MIME types updated successfully: ${STORAGE_BUCKET}`);
+    } else {
+      const errorData = await updateResponse.json().catch(() => ({ message: updateResponse.statusText })) as { message?: string; error?: string };
+      logger.warn("Cannot update bucket MIME types automatically.", {
+        bucketName: STORAGE_BUCKET,
+        status: updateResponse.status,
+        error: errorData.message || errorData.error || "Unknown error",
+      });
+    }
+  } catch (error: any) {
+    logger.warn("Error updating bucket MIME types", {
+      error: error.message,
+      bucketName: STORAGE_BUCKET,
+    });
+  }
+}
+
+/**
  * Check if storage bucket exists, create if not
  * Uses REST API with service role key to bypass RLS restrictions
  */
@@ -214,7 +272,7 @@ export async function ensureStorageBucket(): Promise<void> {
         name: STORAGE_BUCKET,
         public: true,
         file_size_limit: 10485760, // 10MB
-        allowed_mime_types: ["image/png", "image/jpeg", "image/jpg", "image/webp", "image/gif"],
+        allowed_mime_types: ["image/png", "image/jpeg", "image/jpg", "image/webp", "image/gif", "model/gltf+binary", "model/gltf+json", "application/octet-stream"],
       }),
     });
 

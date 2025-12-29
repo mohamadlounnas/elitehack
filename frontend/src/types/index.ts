@@ -107,6 +107,8 @@ export interface Asset {
   image_generated: boolean;
   selected_for_processing?: boolean;
   specifications?: Record<string, any>;
+  meshy_id?: string | null;
+  model_url?: string | null;
   created_at: string;
 }
 

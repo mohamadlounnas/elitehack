@@ -43,7 +43,7 @@ import { FullReportDrawer } from "./FullReportDrawer";
 import { AssetDetailDrawer } from "./AssetDetailDrawer";
 import { FloorPlanDrawer } from "./FloorPlanDrawer";
 import { VideoGeneratorDrawer } from "./VideoGeneratorDrawer";
-import { videoApi } from "../../services/api";
+import { videoApi, assetsApi } from "../../services/api";
 import {
   PieChart,
   Pie,
@@ -294,6 +294,11 @@ export function CompletedDashboard({
   const [isVideoDrawerOpen, setIsVideoDrawerOpen] = useState(false);
   const [selectedVideoProject, setSelectedVideoProject] = useState<VideoProject | null>(null);
   const [isLoadingVideos, setIsLoadingVideos] = useState(true);
+
+  // 3D model generation state
+  const [generating3DModels, setGenerating3DModels] = useState<Set<string>>(new Set());
+  const [checking3DStatus, setChecking3DStatus] = useState<Set<string>>(new Set());
+  const [modelProgress, setModelProgress] = useState<Map<string, number>>(new Map());
 
   // Fetch video projects on mount
   useEffect(() => {
@@ -1153,6 +1158,7 @@ export function CompletedDashboard({
                     <Table.HeaderCell className="text-right">Est. Cost</Table.HeaderCell>
                     <Table.HeaderCell>Image</Table.HeaderCell>
                     <Table.HeaderCell>Suppliers</Table.HeaderCell>
+                    <Table.HeaderCell>3D Model</Table.HeaderCell>
                   </Table.Row>
                 </Table.Header>
                 <Table.Body>
@@ -1194,19 +1200,9 @@ export function CompletedDashboard({
                             : "-"}
                         </Table.Cell>
                         <Table.Cell onClick={(e) => e.stopPropagation()}>
-                          {asset.image_url ? (
-                            <a href={asset.image_url} target="_blank" rel="noopener noreferrer">
-                              <img 
-                                src={asset.image_url} 
-                                alt={asset.name}
-                                className="w-10 h-10 object-cover rounded hover:ring-2 hover:ring-ui-border-interactive"
-                              />
-                            </a>
-                          ) : (
-                            <div className="w-10 h-10 bg-ui-bg-subtle rounded flex items-center justify-center">
-                              <Photo className="w-4 h-4 text-ui-fg-muted" />
-                            </div>
-                          )}
+                          <div className="w-10 h-10 bg-ui-bg-subtle rounded flex items-center justify-center">
+                            <Photo className="w-4 h-4 text-ui-fg-muted" />
+                          </div>
                         </Table.Cell>
                         <Table.Cell>
                           <Badge 
@@ -1215,6 +1211,127 @@ export function CompletedDashboard({
                           >
                             {assetSupplierCount > 0 ? `${assetSupplierCount} suppliers` : "None"}
                           </Badge>
+                        </Table.Cell>
+                        <Table.Cell onClick={(e) => e.stopPropagation()}>
+                          {(() => {
+                            // If model_url exists, show download button
+                            if (asset.model_url) {
+                              return (
+                                <Button
+                                  variant="transparent"
+                                  size="small"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    window.open(asset.model_url!, "_blank");
+                                  }}
+                                  className="gap-x-1"
+                                >
+                                  <ArrowDownTray className="w-4 h-4" />
+                                  Download GLB
+                                </Button>
+                              );
+                            }
+                            
+                            // If meshy_id exists but no model_url, show check status button
+                            if (asset.meshy_id) {
+                              const isChecking = checking3DStatus.has(asset.id);
+                              const progress = modelProgress.get(asset.id);
+                              const buttonText = isChecking 
+                                ? "Checking..." 
+                                : progress !== undefined 
+                                  ? `Check... ${progress}%`
+                                  : "Check if Ready";
+                              return (
+                                <Button
+                                  variant="transparent"
+                                  size="small"
+                                  onClick={async (e) => {
+                                    e.stopPropagation();
+                                    setChecking3DStatus(prev => new Set(prev).add(asset.id));
+                                    try {
+                                      const status = await assetsApi.check3DStatus(project.id, asset.id);
+                                      
+                                      // Store progress if available
+                                      if (status.progress !== undefined) {
+                                        setModelProgress(prev => {
+                                          const next = new Map(prev);
+                                          next.set(asset.id, status.progress);
+                                          return next;
+                                        });
+                                      }
+                                      
+                                      if (status.status === "SUCCEEDED" && status.model_url) {
+                                        // Clear progress when succeeded
+                                        setModelProgress(prev => {
+                                          const next = new Map(prev);
+                                          next.delete(asset.id);
+                                          return next;
+                                        });
+                                        // Refresh assets to get updated model_url
+                                        if (onProjectUpdate) {
+                                          onProjectUpdate();
+                                        }
+                                      }
+                                    } catch (error: any) {
+                                      console.error("Error checking 3D status:", error);
+                                    } finally {
+                                      setChecking3DStatus(prev => {
+                                        const next = new Set(prev);
+                                        next.delete(asset.id);
+                                        return next;
+                                      });
+                                    }
+                                  }}
+                                  disabled={isChecking}
+                                  className="gap-x-1"
+                                >
+                                  {buttonText}
+                                </Button>
+                              );
+                            }
+                            
+                            // If no meshy_id, show generate button (only if image exists)
+                            if (asset.image_generated) {
+                              const isGenerating = generating3DModels.has(asset.id);
+                              return (
+                                <Button
+                                  variant="transparent"
+                                  size="small"
+                                  onClick={async (e) => {
+                                    e.stopPropagation();
+                                    setGenerating3DModels(prev => new Set(prev).add(asset.id));
+                                    try {
+                                      await assetsApi.generate3DModel(project.id, asset.id);
+                                      // Refresh assets to get updated meshy_id
+                                      if (onProjectUpdate) {
+                                        onProjectUpdate();
+                                      }
+                                    } catch (error: any) {
+                                      console.error("Error generating 3D model:", error);
+                                      alert(error.response?.data?.error || error.message || "Failed to generate 3D model");
+                                    } finally {
+                                      setGenerating3DModels(prev => {
+                                        const next = new Set(prev);
+                                        next.delete(asset.id);
+                                        return next;
+                                      });
+                                    }
+                                  }}
+                                  disabled={isGenerating}
+                                  className="gap-x-1"
+                                >
+                                  {isGenerating ? "Generating..." : "Generate 3D Model"}
+                                </Button>
+                              );
+                            }
+                            
+                            // No image, can't generate
+                            return (
+                              <Text size="xsmall" className="text-ui-fg-muted">
+                                No image
+                              </Text>
+                            );
+                          })()}
                         </Table.Cell>
                       </Table.Row>
                     );
@@ -1923,6 +2040,7 @@ export function CompletedDashboard({
       {/* Asset Detail Drawer */}
       <AssetDetailDrawer
         asset={selectedAsset}
+        projectId={project.id}
         allSuppliers={suppliers}
         open={isAssetDrawerOpen}
         onOpenChange={(open) => {

@@ -54,8 +54,8 @@ export const supabase = createClient(supabaseUrl, supabaseServiceRoleKey, {
   },
   global: {
     fetch: async (url, options = {}) => {
-      // Increase timeout to 60 seconds for slow queries
-      const timeout = 60000; // 60 seconds
+      // Increase timeout to 120 seconds for slow queries
+      const timeout = 120000; // 120 seconds (2 minutes)
       
       try {
         const controller = new AbortController();
