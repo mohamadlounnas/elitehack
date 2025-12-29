@@ -300,17 +300,17 @@ Key Equipment: ${assets.map((a: any) => a.name).join(", ")}
           throw new Error(`Upload failed: ${uploadResponse.statusText} - ${errorText}`);
         }
 
-        const uploadResult = await uploadResponse.json() as { url?: string; success?: boolean };
+        const uploadResult = await uploadResponse.json() as { url?: string };
         
-        if (!uploadResult.success || !uploadResult.url) {
+        if (!uploadResult.url) {
           throw new Error("Upload API returned invalid response");
         }
-
+        
         logger.info("Image uploaded to tmp storage", {
           url: uploadResult.url,
           videoId,
         });
-
+        
         return uploadResult.url;
       } catch (error: any) {
         logger.error("Error uploading image to tmp storage", error);

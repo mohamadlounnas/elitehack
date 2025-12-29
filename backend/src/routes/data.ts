@@ -1089,30 +1089,118 @@ router.get("/:id/check-3d-status", async (req, res) => {
     // Check status with Meshy3D
     const status = await meshy3dService.checkStatus(project.meshy_id);
 
-    // If succeeded, save model URL to project
+    // If succeeded, download and upload GLB file
     if (status.status === "SUCCEEDED") {
       const glbUrl = status.model_urls?.glb || status.model_url;
       
       if (glbUrl && !project.model_url) {
-        // Update project with model URL
-        const { error: updateError } = await supabase
-          .from("projects")
-          .update({ model_url: glbUrl })
-          .eq("id", projectId);
+        try {
+          // Download GLB file
+          const glbBuffer = await meshy3dService.downloadGLB(glbUrl);
+          
+          // Upload to /tmp/upload API
+          const filename = `project_${projectId}_model_${Date.now()}.glb`;
+          let modelUrl: string;
+          
+          try {
+            // Upload to local storage service using /tmp/upload API
+            const storageServerUrl = process.env.STORAGE_SERVER_URL || "http://localhost:3333";
+            const formData = new FormData();
+            const blob = new Blob([glbBuffer], { type: "model/gltf+binary" });
+            formData.append("file", blob, filename);
 
-        if (updateError) {
-          logger.error("Error updating project with model_url", updateError, { projectId });
-        } else {
-          logger.info("Project 3D model URL saved", { projectId, modelUrl: glbUrl });
+            const storageResponse = await fetch(`${storageServerUrl}/api/v1/tmp/upload`, {
+              method: "POST",
+              body: formData,
+            });
+
+            if (!storageResponse.ok) {
+              const errorText = await storageResponse.text();
+              throw new Error(`Storage service upload failed: ${storageResponse.statusText} - ${errorText}`);
+            }
+
+            const storageResult = await storageResponse.json() as { url?: string };
+            
+            if (!storageResult.url) {
+              throw new Error("Upload API returned invalid response");
+            }
+            
+            modelUrl = storageResult.url;
+            
+            logger.info("Project GLB file uploaded to tmp storage", { projectId, modelUrl });
+          } catch (uploadError: any) {
+            // If upload fails, use Meshy URL as fallback and save it to database
+            logger.warn("Upload to tmp storage failed, using Meshy URL as fallback", { 
+              projectId, 
+              glbUrl,
+              uploadError: uploadError.message
+            });
+            
+            // Save Meshy URL to database as fallback
+            const { error: updateError } = await supabase
+              .from("projects")
+              .update({ model_url: glbUrl })
+              .eq("id", projectId);
+
+            if (updateError) {
+              logger.error("Error saving Meshy URL as fallback", updateError, { projectId });
+            } else {
+              logger.info("Saved Meshy URL as fallback", { projectId, glbUrl });
+            }
+
+            return res.json({
+              status: "SUCCEEDED",
+              progress: 100,
+              model_url: glbUrl, // Return Meshy URL as fallback
+            });
+          }
+
+          // Update project with model_url
+          const { error: updateError } = await supabase
+            .from("projects")
+            .update({ model_url: modelUrl })
+            .eq("id", projectId);
+
+          if (updateError) {
+            logger.error("Error updating project with model_url", updateError, { projectId });
+            // Still return success with the uploaded URL
+            return res.json({
+              status: "SUCCEEDED",
+              progress: 100,
+              model_url: modelUrl,
+            });
+          }
+
+          logger.info("Project 3D model uploaded and saved", { projectId, modelUrl });
+          return res.json({
+            status: "SUCCEEDED",
+            progress: 100,
+            model_url: modelUrl,
+          });
+        } catch (downloadError: any) {
+          logger.error("Error downloading/uploading project GLB", downloadError, { projectId, glbUrl });
+          
+          // Save Meshy URL to database as fallback
+          const { error: updateError } = await supabase
+            .from("projects")
+            .update({ model_url: glbUrl })
+            .eq("id", projectId);
+
+          if (updateError) {
+            logger.error("Error saving Meshy URL as fallback", updateError, { projectId });
+          } else {
+            logger.info("Saved Meshy URL as fallback after download error", { projectId, glbUrl });
+          }
+          
+          // Return success with Meshy URL as fallback
+          return res.json({
+            status: "SUCCEEDED",
+            progress: 100,
+            model_url: glbUrl,
+          });
         }
-
-        return res.json({
-          status: "SUCCEEDED",
-          progress: 100,
-          model_url: glbUrl,
-        });
       } else if (project.model_url) {
-        // Already saved
+        // Model already uploaded
         return res.json({
           status: "SUCCEEDED",
           progress: 100,

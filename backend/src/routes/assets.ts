@@ -1,7 +1,6 @@
 import { Router } from "express";
 import { supabase } from "../utils/supabase.js";
 import { logger } from "../utils/logger.js";
-import { uploadImageToStorage } from "../utils/storage.js";
 
 const router = Router();
 
@@ -251,87 +250,61 @@ router.get("/:id/assets/:assetId/check-3d-status", async (req, res) => {
           // Download GLB file
           const glbBuffer = await meshy3dService.downloadGLB(glbUrl);
           
-          // Upload to Supabase Storage
-          const filename = `asset_${assetId}_model.glb`;
+          // Upload to /tmp/upload API
+          const filename = `asset_${assetId}_model_${Date.now()}.glb`;
           let modelUrl: string;
           
           try {
-            // Try with model/gltf+binary first (standard GLB MIME type)
-            modelUrl = await uploadImageToStorage(
-              projectId,
-              filename,
-              glbBuffer,
-              "model/gltf+binary", // Standard GLB MIME type
-              "models"
-            );
-          } catch (uploadError: any) {
-            // If that fails, try application/octet-stream
-            try {
-              logger.warn("Failed with model/gltf+binary, trying application/octet-stream", { assetId });
-              modelUrl = await uploadImageToStorage(
-                projectId,
-                filename,
-                glbBuffer,
-                "application/octet-stream",
-                "models"
-              );
-            } catch (secondError: any) {
-              // If both Supabase attempts fail, try local storage service
-              try {
-                logger.warn("Both Supabase upload attempts failed, trying local storage service", { 
-                  assetId, 
-                  firstError: uploadError.message,
-                  secondError: secondError.message
-                });
-                
-                // Upload to local storage service (localhost:3333)
-                const storageServerUrl = process.env.STORAGE_SERVER_URL || "http://localhost:3333";
-                const formData = new FormData();
-                const blob = new Blob([glbBuffer], { type: "model/gltf+binary" });
-                formData.append("file", blob, filename);
+            // Upload to local storage service using /tmp/upload API
+            const storageServerUrl = process.env.STORAGE_SERVER_URL || "http://localhost:3333";
+            const formData = new FormData();
+            const blob = new Blob([glbBuffer], { type: "model/gltf+binary" });
+            formData.append("file", blob, filename);
 
-                const storageResponse = await fetch(`${storageServerUrl}/api/v1/tmp/upload`, {
-                  method: "POST",
-                  body: formData,
-                });
+            const storageResponse = await fetch(`${storageServerUrl}/api/v1/tmp/upload`, {
+              method: "POST",
+              body: formData,
+            });
 
-                if (!storageResponse.ok) {
-                  throw new Error(`Storage service upload failed: ${storageResponse.statusText}`);
-                }
-
-                const storageResult = await storageResponse.json() as { url: string };
-                modelUrl = storageResult.url;
-                
-                logger.info("GLB file uploaded to local storage service", { assetId, modelUrl });
-              } catch (storageError: any) {
-                // If all upload methods fail, use Meshy URL as fallback and save it to database
-                logger.warn("All upload attempts failed, using Meshy URL as fallback", { 
-                  assetId, 
-                  glbUrl,
-                  firstError: uploadError.message,
-                  secondError: secondError.message,
-                  storageError: storageError.message
-                });
-                
-                // Save Meshy URL to database as fallback
-                const { error: updateError } = await supabase
-                  .from("assets")
-                  .update({ model_url: glbUrl })
-                  .eq("id", assetId);
-
-                if (updateError) {
-                  logger.error("Error saving Meshy URL as fallback", updateError, { assetId });
-                } else {
-                  logger.info("Saved Meshy URL as fallback", { assetId, glbUrl });
-                }
-
-                return res.json({
-                  status: "SUCCEEDED",
-                  progress: 100,
-                  model_url: glbUrl, // Return Meshy URL as fallback
-                });
-              }
+            if (!storageResponse.ok) {
+              const errorText = await storageResponse.text();
+              throw new Error(`Storage service upload failed: ${storageResponse.statusText} - ${errorText}`);
             }
+
+            const storageResult = await storageResponse.json() as { url?: string };
+            
+            if (!storageResult.url) {
+              throw new Error("Upload API returned invalid response");
+            }
+            
+            modelUrl = storageResult.url;
+            
+            logger.info("GLB file uploaded to tmp storage", { assetId, modelUrl });
+          } catch (uploadError: any) {
+            // If upload fails, use Meshy URL as fallback and save it to database
+            logger.warn("Upload to tmp storage failed, using Meshy URL as fallback", { 
+              assetId, 
+              glbUrl,
+              uploadError: uploadError.message
+            });
+            
+            // Save Meshy URL to database as fallback
+            const { error: updateError } = await supabase
+              .from("assets")
+              .update({ model_url: glbUrl })
+              .eq("id", assetId);
+
+            if (updateError) {
+              logger.error("Error saving Meshy URL as fallback", updateError, { assetId });
+            } else {
+              logger.info("Saved Meshy URL as fallback", { assetId, glbUrl });
+            }
+
+            return res.json({
+              status: "SUCCEEDED",
+              progress: 100,
+              model_url: glbUrl, // Return Meshy URL as fallback
+            });
           }
 
           // Update asset with model_url
