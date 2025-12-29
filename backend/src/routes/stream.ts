@@ -22,16 +22,25 @@ router.get("/:id/stream", async (req, res) => {
   const { id } = req.params;
   logger.info("SSE stream connection opened", { projectId: id });
 
-  // Set up SSE headers
+  // Set up SSE headers - ensure no buffering
   res.setHeader("Content-Type", "text/event-stream");
-  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Cache-Control", "no-cache, no-transform");
   res.setHeader("Connection", "keep-alive");
   res.setHeader("X-Accel-Buffering", "no"); // Disable nginx buffering
+  res.setHeader("Content-Encoding", "none"); // Disable compression for SSE
+  res.flushHeaders(); // Send headers immediately
 
-  // Helper function to send SSE message
+  // Helper function to send SSE message with explicit flush
   const sendEvent = (event: string, data: any) => {
+    const payload = JSON.stringify(data);
     res.write(`event: ${event}\n`);
-    res.write(`data: ${JSON.stringify(data)}\n\n`);
+    res.write(`data: ${payload}\n\n`);
+    // Force flush to ensure client receives data immediately
+    if (typeof (res as any).flush === 'function') {
+      (res as any).flush();
+    }
+    // Log every event being sent for debugging
+    console.log(`[SSE] 📤 Sending ${event}:`, data.message || data.type || "no message");
     logger.debug("SSE event sent", { projectId: id, event, step: data.step });
   };
 
@@ -57,10 +66,27 @@ router.get("/:id/stream", async (req, res) => {
 
     // Check if step is already running
     if (runningSteps.has(stepKey)) {
-      logger.info("Step already running, monitoring existing execution", { projectId: id, step: currentStep });
-      sendEvent("status", { step: currentStep, message: "Step is already running..." });
-      // Just monitor the existing execution
-      res.end();
+      logger.info("Step already running, waiting for completion", { projectId: id, step: currentStep });
+      sendEvent("status", { step: currentStep, message: "Step is already running, monitoring progress..." });
+      
+      // Wait for the step to complete instead of immediately closing
+      // Poll every 2 seconds to check if step is still running
+      const checkInterval = setInterval(() => {
+        if (!runningSteps.has(stepKey)) {
+          clearInterval(checkInterval);
+          sendEvent("complete", { step: currentStep, message: "Step completed!" });
+          res.end();
+        } else {
+          sendEvent("status", { step: currentStep, message: "Still processing..." });
+        }
+      }, 2000);
+      
+      // Clean up if client disconnects
+      req.on("close", () => {
+        clearInterval(checkInterval);
+        logger.info("Client disconnected while waiting for step", { projectId: id, step: currentStep });
+      });
+      
       return;
     }
 

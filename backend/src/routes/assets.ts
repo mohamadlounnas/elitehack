@@ -373,5 +373,93 @@ router.get("/:id/assets/:assetId/check-3d-status", async (req, res) => {
   }
 });
 
+/**
+ * POST /projects/:id/assets/:assetId/source
+ * Source suppliers for a specific asset using Firecrawl
+ */
+router.post("/:id/assets/:assetId/source", async (req, res) => {
+  try {
+    // Lazy import to avoid module loading issues
+    const { sourcingService } = await import("../services/ai/sourcingService.js");
+    
+    const { id: projectId, assetId } = req.params;
+
+    logger.info("Starting sourcing for single asset", { projectId, assetId });
+
+    // Set up SSE headers
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Connection", "keep-alive");
+    res.setHeader("X-Accel-Buffering", "no");
+
+    // Get the asset
+    const { data: asset, error: assetError } = await supabase
+      .from("assets")
+      .select("*")
+      .eq("id", assetId)
+      .eq("project_id", projectId)
+      .single();
+
+    if (assetError || !asset) {
+      logger.error("Asset not found", assetError, { projectId, assetId });
+      res.write(`data: ${JSON.stringify({ error: "Asset not found" })}\n\n`);
+      res.end();
+      return;
+    }
+
+    const sendEvent = (data: any) => {
+      res.write(`data: ${JSON.stringify(data)}\n\n`);
+    };
+
+    sendEvent({ message: `🚀 Starting sourcing for ${asset.name}...` });
+
+    // Use the internal method to search for suppliers
+    // We need to access the private method, so we'll call the service differently
+    try {
+      // Temporarily mark this asset as selected for processing
+      await supabase
+        .from("assets")
+        .update({ selected_for_processing: true })
+        .eq("id", assetId);
+
+      // Run sourcing just for this asset
+      await sourcingService.startSourcingWithStream(
+        projectId,
+        (update) => {
+          // Only send updates for this specific asset
+          if (!update.asset || update.asset.id === assetId) {
+            sendEvent({
+              type: update.type,
+              asset: update.asset,
+              supplier: update.supplier,
+              suppliers: update.suppliers,
+              progress: update.progress,
+              total: update.total,
+              message: update.message,
+            });
+          }
+        }
+      );
+
+      sendEvent({ message: "✅ Sourcing complete!" });
+    } catch (sourcingError: any) {
+      logger.error("Sourcing error", sourcingError, { assetId });
+      sendEvent({ error: sourcingError.message, message: `❌ Error: ${sourcingError.message}` });
+    }
+
+    res.end();
+  } catch (error: any) {
+    logger.error("Error in POST /projects/:id/assets/:assetId/source", error);
+    
+    // If headers haven't been sent, send error as JSON
+    if (!res.headersSent) {
+      res.status(500).json({ error: error.message });
+    } else {
+      res.write(`data: ${JSON.stringify({ error: error.message })}\n\n`);
+      res.end();
+    }
+  }
+});
+
 export default router;
 

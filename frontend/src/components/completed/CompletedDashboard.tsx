@@ -19,6 +19,7 @@ import {
 import { 
   Check,
   ArrowDownTray,
+  ArrowPath,
   ChartBar,
   Buildings,
   CurrencyDollar,
@@ -44,6 +45,7 @@ import { AssetDetailDrawer } from "./AssetDetailDrawer";
 import { FloorPlanDrawer } from "./FloorPlanDrawer";
 import { VideoGeneratorDrawer } from "./VideoGeneratorDrawer";
 import { GLBPreviewDialog } from "./GLBPreviewDialog";
+import { SourcingProgressDialog } from "./SourcingProgressDialog";
 import { videoApi, assetsApi, dataApi } from "../../services/api";
 import {
   PieChart,
@@ -314,6 +316,9 @@ export function CompletedDashboard({
   const [isGLBPreviewOpen, setIsGLBPreviewOpen] = useState(false);
   const [previewGLBUrl, setPreviewGLBUrl] = useState<string | null>(null);
   const [previewTitle, setPreviewTitle] = useState<string>("3D Model Preview");
+
+  // Sourcing dialog state
+  const [isSourcingDialogOpen, setIsSourcingDialogOpen] = useState(false);
 
   // Fetch video projects on mount
   useEffect(() => {
@@ -1243,6 +1248,78 @@ export function CompletedDashboard({
         {/* Equipment Tab */}
         <Tabs.Content value="equipment" className="mt-4">
           <Container className="p-0 overflow-hidden">
+            {/* Header with Export Button */}
+            <div className="flex items-center justify-between p-4 border-b border-ui-border-base">
+              <div className="flex items-center gap-x-2">
+                <Text weight="plus" className="text-ui-fg-base">
+                  Equipment List
+                </Text>
+                <Badge color="grey" size="small">{assets.length} items</Badge>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="secondary"
+                  size="small"
+                  onClick={() => setIsSourcingDialogOpen(true)}
+                  className="gap-x-2"
+                >
+                  <ArrowPath className="w-4 h-4" />
+                  Re-source Suppliers
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="small"
+                  onClick={() => {
+                    // Generate CSV content
+                    const headers = [
+                      "Name",
+                      "Type",
+                      "Description",
+                      "Estimated Cost (USD)",
+                      "Power (kW)",
+                      "Dimensions",
+                      "Weight (kg)",
+                      "Manufacturer",
+                      "Model",
+                      "Warranty",
+                    ];
+                    
+                    const rows = assets.map(asset => {
+                      const specs = asset.specifications || {};
+                      return [
+                        `"${(asset.name || "").replace(/"/g, '""')}"`,
+                        `"${(asset.type || "").replace(/"/g, '""')}"`,
+                        `"${(asset.description || "").replace(/"/g, '""')}"`,
+                        specs.estimated_cost_usd || "",
+                        specs.power_kw || "",
+                        `"${(specs.dimensions || "").replace(/"/g, '""')}"`,
+                        specs.weight_kg || "",
+                        `"${(specs.manufacturer || "").replace(/"/g, '""')}"`,
+                        `"${(specs.model || "").replace(/"/g, '""')}"`,
+                        `"${(specs.warranty || "").replace(/"/g, '""')}"`,
+                      ].join(",");
+                    });
+                    
+                    const csvContent = [headers.join(","), ...rows].join("\n");
+                    
+                    // Create download link
+                    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+                    const url = URL.createObjectURL(blob);
+                    const link = document.createElement("a");
+                    link.setAttribute("href", url);
+                    link.setAttribute("download", `${project.name || "project"}_equipment_${new Date().toISOString().split("T")[0]}.csv`);
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                    URL.revokeObjectURL(url);
+                  }}
+                  className="gap-x-2"
+                >
+                  <ArrowDownTray className="w-4 h-4" />
+                  Export CSV
+                </Button>
+              </div>
+            </div>
             <div className="overflow-x-auto">
               <Table>
                 <Table.Header>
@@ -2387,6 +2464,18 @@ export function CompletedDashboard({
           title={previewTitle}
         />
       )}
+
+      {/* Sourcing Progress Dialog */}
+      <SourcingProgressDialog
+        isOpen={isSourcingDialogOpen}
+        onClose={() => setIsSourcingDialogOpen(false)}
+        projectId={project.id}
+        assets={assets}
+        onComplete={() => {
+          // Refresh suppliers data after sourcing completes
+          window.location.reload();
+        }}
+      />
     </div>
   );
 }

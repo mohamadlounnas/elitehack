@@ -2,6 +2,10 @@ import { supabase } from "../../utils/supabase.js";
 import { createLLM } from "../../utils/langchain.js";
 import { HumanMessage, SystemMessage } from "@langchain/core/messages";
 import { logger } from "../../utils/logger.js";
+import FirecrawlApp from "@mendable/firecrawl-js";
+import dotenv from "dotenv";
+
+dotenv.config();
 
 // Types for streaming updates
 export type SourcingStreamCallback = (update: {
@@ -60,6 +64,22 @@ const PREFERRED_COUNTRIES = [
 
 class SourcingService {
   private readonly SUPPLIERS_PER_ASSET = 5;
+  private firecrawl: FirecrawlApp | null = null;
+
+  /**
+   * Initialize Firecrawl client
+   */
+  private getFirecrawlClient(): FirecrawlApp {
+    if (!this.firecrawl) {
+      const apiKey = process.env.FIRECRAWL_API_KEY;
+      if (!apiKey) {
+        throw new Error("FIRECRAWL_API_KEY not configured");
+      }
+      this.firecrawl = new FirecrawlApp({ apiKey });
+      logger.info("Firecrawl client initialized", { keyPrefix: apiKey.substring(0, 5) });
+    }
+    return this.firecrawl;
+  }
 
   /**
    * Elite Sourcing System Prompt
@@ -134,6 +154,17 @@ ALWAYS return VALID JSON array of suppliers. Be thorough and accurate.`;
   ): Promise<void> {
     logger.info("Starting elite sourcing process", { projectId });
     
+    // Check Firecrawl API key configuration
+    const firecrawlApiKey = process.env.FIRECRAWL_API_KEY;
+    if (!firecrawlApiKey) {
+      logger.warn("FIRECRAWL_API_KEY not configured - will use fallback suppliers");
+      console.warn("[FIRECRAWL] ⚠️  FIRECRAWL_API_KEY not set in environment variables!");
+      console.warn("[FIRECRAWL] Sourcing will use fallback suppliers instead of real web search");
+    } else {
+      logger.info("Firecrawl API key configured", { keyPrefix: firecrawlApiKey.substring(0, 5) });
+      console.log(`[FIRECRAWL] ✅ API key configured: ${firecrawlApiKey.substring(0, 5)}...`);
+    }
+    
     try {
       // Get all SELECTED assets for the project
       const { data: assets, error: assetsError } = await supabase
@@ -154,83 +185,128 @@ ALWAYS return VALID JSON array of suppliers. Be thorough and accurate.`;
       }
 
       const total = assets.length;
+      const BATCH_SIZE = 3; // Process 3 assets in parallel
+      
       onUpdate({ 
         type: "starting", 
         progress: 0, 
         total, 
-        message: `Starting supplier search for ${total} assets...` 
+        message: `🚀 Starting PARALLEL supplier search for ${total} assets (${BATCH_SIZE} at a time)...` 
       });
 
-      // Process each asset
-      for (let i = 0; i < assets.length; i++) {
-        const asset = assets[i];
-        logger.info(`Sourcing suppliers for asset ${i + 1}/${total}`, { 
-          projectId, 
-          assetId: asset.id, 
-          assetName: asset.name 
-        });
+      console.log(`[FIRECRAWL] 🚀 Processing ${total} assets in parallel batches of ${BATCH_SIZE}`);
+      
+      let completedCount = 0;
+
+      // Process assets in parallel batches
+      for (let batchStart = 0; batchStart < assets.length; batchStart += BATCH_SIZE) {
+        const batch = assets.slice(batchStart, batchStart + BATCH_SIZE);
+        const batchNum = Math.floor(batchStart / BATCH_SIZE) + 1;
+        const totalBatches = Math.ceil(assets.length / BATCH_SIZE);
+        
+        console.log(`[FIRECRAWL] 📦 Processing batch ${batchNum}/${totalBatches}: ${batch.map(a => a.name).join(', ')}`);
 
         onUpdate({
           type: "searching",
-          asset: { id: asset.id, name: asset.name, type: asset.type },
-          progress: i,
+          progress: completedCount,
           total,
-          message: `Searching suppliers for ${asset.name}...`
+          message: `📦 Batch ${batchNum}/${totalBatches}: Processing ${batch.length} assets in parallel...`
         });
 
-        try {
-          // Search for suppliers using AI
-          const suppliers = await this.searchSuppliersWithAI(asset);
+        // Process all assets in this batch in parallel
+        const batchPromises = batch.map(async (asset, batchIndex) => {
+          const globalIndex = batchStart + batchIndex;
           
+          logger.info(`Sourcing suppliers for asset ${globalIndex + 1}/${total}`, { 
+            projectId, 
+            assetId: asset.id, 
+            assetName: asset.name 
+          });
+
+          try {
+            // Search for suppliers using Firecrawl
+            const suppliers = await this.searchSuppliersWithAI(asset, (message) => {
+              // Send progress updates during Firecrawl search
           onUpdate({
-            type: "analyzing",
+                type: "searching",
             asset: { id: asset.id, name: asset.name, type: asset.type },
-            progress: i,
+                progress: completedCount,
             total,
-            message: `Found ${suppliers.length} suppliers, analyzing...`
+                message: `[${asset.name}] ${message}`
+              });
           });
 
           // Save suppliers to database and link to asset
+            const savedSuppliers: SupplierData[] = [];
           for (const supplierData of suppliers) {
             const savedSupplier = await this.saveSupplier(supplierData);
             
             if (savedSupplier) {
               // Link supplier to asset
               await this.linkSupplierToAsset(asset.id, savedSupplier.id, suppliers.indexOf(supplierData) === 0);
-              
+                savedSuppliers.push(supplierData);
+              }
+            }
+
+            return { 
+              asset, 
+              suppliers: savedSuppliers, 
+              success: true, 
+              error: null 
+            };
+
+          } catch (error: any) {
+            logger.error(`Error sourcing suppliers for asset ${asset.id}`, error);
+            return { 
+              asset, 
+              suppliers: [], 
+              success: false, 
+              error: error.message 
+            };
+          }
+        });
+
+        // Wait for all assets in this batch to complete
+        const batchResults = await Promise.all(batchPromises);
+
+        // Report results for this batch
+        for (const result of batchResults) {
+          completedCount++;
+          
+          if (result.success) {
+          onUpdate({
+            type: "asset_complete",
+              asset: { id: result.asset.id, name: result.asset.name, type: result.asset.type },
+              suppliers: result.suppliers,
+              progress: completedCount,
+            total,
+              message: `✅ ${result.asset.name} - ${result.suppliers.length} suppliers found`
+            });
+            
+            // Also send individual supplier updates
+            for (const supplier of result.suppliers) {
               onUpdate({
                 type: "found",
-                asset: { id: asset.id, name: asset.name, type: asset.type },
-                supplier: supplierData,
-                progress: i,
+                asset: { id: result.asset.id, name: result.asset.name, type: result.asset.type },
+                supplier: supplier,
+                progress: completedCount,
                 total,
-                message: `Found: ${supplierData.name} (${supplierData.country})`
+                message: `Found: ${supplier.name} (${supplier.country})`
               });
             }
-          }
-
-          // Asset complete
+          } else {
           onUpdate({
             type: "asset_complete",
-            asset: { id: asset.id, name: asset.name, type: asset.type },
-            suppliers: suppliers,
-            progress: i + 1,
-            total,
-            message: `Completed sourcing for ${asset.name} - ${suppliers.length} suppliers found`
-          });
-
-        } catch (error: any) {
-          logger.error(`Error sourcing suppliers for asset ${asset.id}`, error);
-          // Continue with next asset
-          onUpdate({
-            type: "asset_complete",
-            asset: { id: asset.id, name: asset.name, type: asset.type },
+              asset: { id: result.asset.id, name: result.asset.name, type: result.asset.type },
             suppliers: [],
-            progress: i + 1,
+              progress: completedCount,
             total,
-            message: `Error sourcing ${asset.name}: ${error.message}`
+              message: `❌ ${result.asset.name}: ${result.error}`
           });
         }
+        }
+
+        console.log(`[FIRECRAWL] ✅ Batch ${batchNum} complete. Progress: ${completedCount}/${total}`);
       }
 
       // All done
@@ -256,34 +332,373 @@ ALWAYS return VALID JSON array of suppliers. Be thorough and accurate.`;
   }
 
   /**
-   * Search for suppliers using AI with enhanced prompting
+   * Search for suppliers using Firecrawl web search and scraping - PARALLEL VERSION
    */
-  private async searchSuppliersWithAI(asset: any): Promise<SupplierData[]> {
+  private async searchSuppliersWithAI(
+    asset: any,
+    onProgress?: (message: string) => void
+  ): Promise<SupplierData[]> {
+    try {
+      const progress = (msg: string) => {
+        logger.info(`[FIRECRAWL] ${msg}`, { assetName: asset.name });
+        console.log(`[FIRECRAWL] ${msg} - Asset: ${asset.name}`);
+        onProgress?.(msg);
+      };
+
+      progress("🚀 Starting PARALLEL Firecrawl supplier search");
+      
+      // Build search queries for Firecrawl
+      const searchQueries = this.buildSearchQueries(asset);
+      progress(`📋 Running ${searchQueries.length} search queries IN PARALLEL...`);
+      
+      // STEP 1: Run ALL search queries in parallel
+      const searchPromises = searchQueries.map(async (query, index) => {
+        try {
+          logger.info(`Starting parallel search ${index + 1}`, { query });
+          const results = await this.firecrawlSearch(query);
+          return { query, results: results || [], error: null };
+        } catch (error: any) {
+          logger.warn(`Search failed for query: ${query}`, { error: error.message });
+          return { query, results: [], error: error.message };
+        }
+      });
+
+      const searchResults = await Promise.all(searchPromises);
+      
+      // Collect all unique URLs from all search results
+      const allUrls = new Map<string, any>(); // url -> search result
+      for (const { query, results, error } of searchResults) {
+        if (error) {
+          progress(`❌ Search "${query.substring(0, 30)}..." failed: ${error}`);
+          continue;
+        }
+        progress(`✅ Search "${query.substring(0, 30)}..." found ${results.length} results`);
+        
+        // Take top 3 from each query
+        for (const result of results.slice(0, 3)) {
+          if (result.url && !allUrls.has(result.url)) {
+            allUrls.set(result.url, result);
+          }
+        }
+      }
+
+      progress(`📊 Total unique URLs to scrape: ${allUrls.size}`);
+
+      if (allUrls.size === 0) {
+        progress(`⚠️  No URLs found, using fallback suppliers`);
+        return this.generateFallbackSuppliers(asset.name, asset.type);
+      }
+
+      // STEP 2: Scrape ALL URLs in parallel (limit to 10 to avoid rate limiting)
+      const urlsToScrape = Array.from(allUrls.entries()).slice(0, 10);
+      progress(`🌐 Scraping ${urlsToScrape.length} websites IN PARALLEL...`);
+
+      const scrapePromises = urlsToScrape.map(async ([url, searchResult]) => {
+        try {
+          logger.info(`Starting parallel scrape`, { url });
+          const supplierData = await this.scrapeSupplierWebsite(url, asset);
+          
+          if (supplierData && this.isValidSupplier(supplierData)) {
+            return { url, supplier: supplierData, error: null };
+          } else {
+            // Try basic extraction from search result
+            const basicSupplier = this.extractSupplierFromSearchResult(searchResult, asset);
+            if (basicSupplier && this.isValidSupplier(basicSupplier)) {
+              return { url, supplier: basicSupplier, error: null };
+            }
+            return { url, supplier: null, error: "Validation failed" };
+          }
+        } catch (error: any) {
+          // Try basic extraction on error
+          const basicSupplier = this.extractSupplierFromSearchResult(searchResult, asset);
+          if (basicSupplier && this.isValidSupplier(basicSupplier)) {
+            return { url, supplier: basicSupplier, error: null };
+          }
+          return { url, supplier: null, error: error.message };
+        }
+      });
+
+      const scrapeResults = await Promise.all(scrapePromises);
+      
+      // Collect valid suppliers
+      const foundSuppliers: SupplierData[] = [];
+      const seenNames = new Set<string>();
+      
+      for (const { url, supplier, error } of scrapeResults) {
+        if (error) {
+          progress(`❌ Scrape "${url.substring(0, 40)}..." failed: ${error}`);
+          continue;
+        }
+        if (supplier && !seenNames.has(supplier.name.toLowerCase())) {
+          seenNames.add(supplier.name.toLowerCase());
+          foundSuppliers.push(supplier);
+          progress(`✅ Found: ${supplier.name} (${supplier.country})`);
+        }
+      }
+
+      progress(`📊 Total valid suppliers found: ${foundSuppliers.length}`);
+
+      // Use AI to enhance and validate the found suppliers
+      if (foundSuppliers.length > 0) {
+        progress(`🤖 Enhancing ${foundSuppliers.length} suppliers with AI...`);
+        const enhancedSuppliers = await this.enhanceSuppliersWithAI(foundSuppliers, asset);
+        progress(`✅ Done! ${enhancedSuppliers.length} suppliers ready`);
+        return enhancedSuppliers.slice(0, this.SUPPLIERS_PER_ASSET);
+      }
+
+      // Fallback to AI-generated suppliers if Firecrawl finds nothing
+      logger.warn("No suppliers found via Firecrawl, using AI fallback", { assetName: asset.name });
+      console.warn(`[FIRECRAWL] No suppliers found for ${asset.name}, using fallback`);
+      progress(`⚠️  No suppliers found via Firecrawl, using fallback suppliers`);
+      return this.generateFallbackSuppliers(asset.name, asset.type);
+      
+    } catch (error: any) {
+      logger.error("Error in searchSuppliersWithAI (Firecrawl)", { error: error.message, stack: error.stack, assetName: asset.name });
+      console.error(`[FIRECRAWL] Fatal error for ${asset.name}:`, error.message, error.stack);
+      // Return fallback suppliers on error
+      return this.generateFallbackSuppliers(asset.name, asset.type);
+    }
+  }
+
+  /**
+   * Build search queries for Firecrawl based on asset details
+   */
+  private buildSearchQueries(asset: any): string[] {
+    const queries: string[] = [];
+    const equipmentName = asset.name;
+    const equipmentType = asset.type || "industrial equipment";
+
+    // Priority queries targeting Algeria and North Africa
+    queries.push(`${equipmentName} supplier manufacturer Algeria`);
+    queries.push(`${equipmentName} distributor North Africa`);
+    queries.push(`${equipmentType} supplier Algeria Tunisia`);
+    queries.push(`${equipmentName} industrial supplier MENA region`);
+    queries.push(`${equipmentName} manufacturer Africa`);
+
+    return queries;
+  }
+
+  /**
+   * Search using Firecrawl web search
+   */
+  private async firecrawlSearch(query: string): Promise<any[]> {
+    try {
+      const firecrawl = this.getFirecrawlClient();
+      
+      logger.info("Calling Firecrawl search", { query });
+      console.log(`[FIRECRAWL] 🔍 Searching: "${query}"`);
+
+      // Use Firecrawl SDK search method
+      const results = await firecrawl.search(query, {
+        limit: 10,
+        sources: ["web"],
+        country: "DZ", // Algeria
+        location: "Algeria",
+      });
+
+      logger.info("Firecrawl search results", { 
+        resultCount: results?.web?.length || 0,
+        query 
+      });
+      console.log(`[FIRECRAWL] ✅ Search completed: ${results?.web?.length || 0} results found`);
+      
+      // Firecrawl SDK returns results.web array directly
+      return results?.web || [];
+    } catch (error: any) {
+      logger.error("Firecrawl search error", { error: error.message, stack: error.stack, query });
+      console.error(`[FIRECRAWL] ❌ Search error:`, error.message);
+      throw error;
+    }
+  }
+
+  /**
+   * Scrape supplier website to extract detailed information
+   */
+  private async scrapeSupplierWebsite(url: string, asset: any): Promise<SupplierData | null> {
+    try {
+      const firecrawl = this.getFirecrawlClient();
+
+      logger.info("Scraping supplier website", { url });
+      console.log(`[FIRECRAWL] 🌐 Scraping: ${url}`);
+
+      // Use Firecrawl SDK scrape method
+      const result = await firecrawl.scrape(url, {
+        formats: ["markdown"],
+        onlyMainContent: true,
+      });
+
+      const content = result?.markdown || result?.content || "";
+
+      logger.info("Scrape completed", { 
+        url, 
+        contentLength: content.length,
+        hasContent: !!content 
+      });
+      console.log(`[FIRECRAWL] ✅ Scrape completed: ${content.length} chars extracted`);
+
+      if (!content) {
+        logger.warn("No content extracted from website", { url });
+        return null;
+      }
+
+      // Use AI to extract structured supplier data from scraped content
+      logger.info("Extracting supplier data from content", { url, contentLength: content.length });
+      return await this.extractSupplierDataFromContent(content, url, asset);
+    } catch (error: any) {
+      logger.error("Error scraping supplier website", { 
+        url, 
+        error: error.message, 
+        stack: error.stack 
+      });
+      console.error(`[FIRECRAWL] ❌ Scrape error for ${url}:`, error.message);
+      return null;
+    }
+  }
+
+  /**
+   * Extract supplier data from scraped website content using AI
+   */
+  private async extractSupplierDataFromContent(
+    content: string,
+    sourceUrl: string,
+    asset: any
+  ): Promise<SupplierData | null> {
     try {
       const llm = createLLM();
       
-      const searchPrompt = `Search for industrial suppliers for the following equipment:
+      const extractionPrompt = `Extract supplier information from the following website content. Focus on finding:
+- Company name
+- Contact information (email, phone)
+- Location and country
+- Address
+- Products/services offered
+- Certifications
+- Company description
+- Years in business (if mentioned)
+- Company size
 
-EQUIPMENT DETAILS:
-- Name: ${asset.name}
-- Type: ${asset.type || "Industrial Equipment"}
-- Description: ${asset.description || "Standard industrial equipment"}
-- Specifications: ${JSON.stringify(asset.specifications || {})}
+Website content:
+${content.substring(0, 5000)} // Limit content to avoid token limits
 
-SEARCH REQUIREMENTS:
-1. Find ${this.SUPPLIERS_PER_ASSET} reputable suppliers/manufacturers
-2. Focus on suppliers who can ship to Algeria/North Africa
-3. Include mix of: manufacturers, authorized distributors, and regional dealers
-4. Verify each supplier has a legitimate web presence
+Equipment being sourced: ${asset.name} (${asset.type || "Industrial Equipment"})
 
-MUST EXCLUDE: Any supplier from Morocco or Israel
+Return a JSON object with this structure:
+{
+  "name": "Company Name",
+  "website": "${sourceUrl}",
+  "email": "contact email if found",
+  "phone": "phone number if found",
+  "location": "City, Country",
+  "country": "Country Name",
+  "address": "full address if found",
+  "contact_person": "contact name if found",
+  "products": ["product 1", "product 2"],
+  "specializations": ["specialty 1"],
+  "certifications": ["certification 1"],
+  "years_in_business": 0,
+  "company_size": "Large/Medium/Small",
+  "description": "company description",
+  "source_url": "${sourceUrl}",
+  "rating": null
+}
 
-Provide the suppliers as a JSON array. Each supplier must have at minimum: name, location, country.
+Return ONLY the JSON object, no other text.`;
+
+      const messages = [
+        new SystemMessage("You are an expert at extracting structured data from company websites. Return only valid JSON."),
+        new HumanMessage(extractionPrompt)
+      ];
+
+      const response = await llm.invoke(messages);
+      const responseContent = typeof response.content === 'string' 
+        ? response.content 
+        : JSON.stringify(response.content);
+
+      // Parse JSON response
+      const jsonMatch = responseContent.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        const supplierData = JSON.parse(jsonMatch[0]);
+        return this.normalizeSupplier(supplierData);
+      }
+
+      return null;
+    } catch (error: any) {
+      logger.error("Error extracting supplier data from content", { error: error.message });
+      return null;
+    }
+  }
+
+  /**
+   * Extract basic supplier info from search result when scraping fails
+   */
+  private extractSupplierFromSearchResult(result: any, asset: any): SupplierData | null {
+    try {
+      const title = result.title || "";
+      const snippet = result.description || "";
+      const url = result.url || "";
+
+      // Extract country from URL or snippet
+      let country = "Unknown";
+      for (const prefCountry of PREFERRED_COUNTRIES) {
+        if (snippet.toLowerCase().includes(prefCountry.toLowerCase()) || 
+            url.toLowerCase().includes(prefCountry.toLowerCase())) {
+          country = prefCountry;
+          break;
+        }
+      }
+
+      return {
+        name: title.split(" - ")[0].split(" | ")[0] || "Unknown Supplier",
+        website: url,
+        location: this.extractLocationFromSnippet(snippet, country),
+        country: country,
+        description: snippet,
+        source_url: url,
+        products: [asset.name],
+      };
+    } catch (error) {
+      return null;
+    }
+  }
+
+  /**
+   * Extract location from snippet text
+   */
+  private extractLocationFromSnippet(snippet: string, country: string): string {
+    // Try to find city name in snippet
+    const cityMatch = snippet.match(/([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?),?\s+(?:Algeria|Tunisia|Egypt|Germany|Italy|France|Spain|China|Turkey|India)/);
+    if (cityMatch) {
+      return `${cityMatch[1]}, ${country}`;
+    }
+    return country;
+  }
+
+  /**
+   * Enhance supplier data with AI validation and enrichment
+   */
+  private async enhanceSuppliersWithAI(
+    suppliers: SupplierData[],
+    asset: any
+  ): Promise<SupplierData[]> {
+    try {
+      const llm = createLLM();
+      
+      const enhancementPrompt = `Review and enhance the following supplier data. Ensure all suppliers:
+1. Have complete contact information
+2. Are verified as legitimate companies
+3. Match the equipment requirements: ${asset.name} (${asset.type || "Industrial Equipment"})
+4. Are NOT from prohibited countries (Morocco, Israel)
+5. Have proper country and location information
+
+Suppliers to review:
+${JSON.stringify(suppliers, null, 2)}
+
+Return a JSON array of enhanced suppliers. Remove any invalid suppliers.
 Return ONLY the JSON array, no other text.`;
 
       const messages = [
         new SystemMessage(this.getSystemPrompt()),
-        new HumanMessage(searchPrompt)
+        new HumanMessage(enhancementPrompt)
       ];
 
       const response = await llm.invoke(messages);
@@ -291,25 +706,16 @@ Return ONLY the JSON array, no other text.`;
         ? response.content 
         : JSON.stringify(response.content);
 
-      // Parse JSON response
-      const suppliers = this.parseSupplierResponse(content);
+      const enhanced = this.parseSupplierResponse(content);
       
-      // Filter out prohibited countries and validate
-      const validSuppliers = suppliers
+      // Filter and validate
+      return enhanced
         .filter(s => this.isValidSupplier(s))
         .slice(0, this.SUPPLIERS_PER_ASSET);
-
-      // If we don't have enough, generate some realistic fallbacks
-      if (validSuppliers.length < 2) {
-        const fallbacks = this.generateFallbackSuppliers(asset.name, asset.type);
-        validSuppliers.push(...fallbacks.slice(0, this.SUPPLIERS_PER_ASSET - validSuppliers.length));
-      }
-
-      return validSuppliers;
     } catch (error: any) {
-      logger.error("Error in searchSuppliersWithAI", error);
-      // Return fallback suppliers on error
-      return this.generateFallbackSuppliers(asset.name, asset.type);
+      logger.error("Error enhancing suppliers with AI", error);
+      // Return original suppliers if enhancement fails
+      return suppliers.filter(s => this.isValidSupplier(s));
     }
   }
 

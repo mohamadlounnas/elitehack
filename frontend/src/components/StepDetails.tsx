@@ -156,13 +156,18 @@ export function StepDetails({
     const handleEvent = (event: MessageEvent) => {
       try {
         const data: StreamUpdate = JSON.parse(event.data);
-        console.log("[StepDetails] SSE event received:", { 
+        console.log("[StepDetails] 📨 SSE event received:", { 
           eventType: event.type, 
           step: data.step, 
           type: data.type, 
+          currentStep,
+          stepMatch: data.step === currentStep,
           layoutType: data.layoutType, 
           hasImageUrl: !!data.imageUrl,
+          hasSupplier: !!data.supplier,
           hasSuppliers: !!data.suppliers,
+          suppliersCount: data.suppliers?.length,
+          assetName: data.asset?.name,
           message: data.message
         });
         

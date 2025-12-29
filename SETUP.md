@@ -15,6 +15,7 @@ PORT=3000
 SUPABASE_URL=your_supabase_url
 SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
 GEMINI_API_KEY=AIzaSyDoflplqtb52hrNrFB3OWZ7JRxdshCdGbo
+FIRECRAWL_API_KEY=your_firecrawl_api_key
 ```
 
 Start the backend:
@@ -60,7 +61,7 @@ The database schema has already been created via Supabase migration. The tables 
 ✅ AI-powered planning using Google Gemini
 ✅ 2D layout generation (placeholder)
 ✅ Asset image generation (placeholder)
-✅ Supplier sourcing (placeholder)
+✅ Supplier sourcing (using Firecrawl for accurate web-based supplier discovery)
 ✅ Cost analysis with PDF generation
 ✅ Database-driven state persistence
 
@@ -76,7 +77,7 @@ The Gemini API key is already configured in the code.
 ## Next Steps for Production
 
 1. Replace placeholder image generation with actual service (Meshy3D or DALL-E)
-2. Implement real Google Search API integration for supplier sourcing
+2. ~~Implement real Google Search API integration for supplier sourcing~~ ✅ **DONE: Now using Firecrawl for accurate supplier sourcing**
 3. Add 3D model generation step (currently skipped)
 4. Implement phone API integration for negotiations
 5. Enhance 2D layout generation with actual CAD/BIM libraries

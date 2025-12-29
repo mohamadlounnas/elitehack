@@ -3,7 +3,7 @@
  * Shows detailed asset information with supplier comparison and scoring
  */
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   Drawer,
   Heading,
@@ -27,10 +27,16 @@ import {
   ExclamationCircle,
   Star,
   Swatch,
+  MagnifyingGlass,
+  ArrowPath,
+  GlobeEurope,
 } from "@medusajs/icons";
 import type { Asset, Supplier, AssetSupplier } from "../../types";
 import { assetsApi } from "../../services/api";
 import ModelViewer from "./ModelViewer";
+
+// API base URL
+const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:3001/api";
 
 interface AssetDetailDrawerProps {
   asset: Asset | null;
@@ -64,6 +70,12 @@ export function AssetDetailDrawer({
   const [supplierScores, setSupplierScores] = useState<SupplierScore[]>([]);
   const [fullAsset, setFullAsset] = useState<Asset | null>(asset);
   const [isLoadingAsset, setIsLoadingAsset] = useState(false);
+  
+  // Sourcing state
+  const [isSourcing, setIsSourcing] = useState(false);
+  const [sourcingProgress, setSourcingProgress] = useState<string[]>([]);
+  const [sourcingError, setSourcingError] = useState<string | null>(null);
+  const [foundSuppliersFromSourcing, setFoundSuppliersFromSourcing] = useState<any[]>([]);
 
   // Load full asset with image when drawer opens
   useEffect(() => {
@@ -89,7 +101,95 @@ export function AssetDetailDrawer({
   // Reset to details tab when asset changes
   useEffect(() => {
     setActiveTab("details");
+    setSourcingProgress([]);
+    setSourcingError(null);
+    setFoundSuppliersFromSourcing([]);
   }, [asset?.id]);
+
+  // Function to start sourcing for this specific asset
+  const startSourcingForAsset = useCallback(async () => {
+    if (!fullAsset || !projectId) return;
+    
+    setIsSourcing(true);
+    setSourcingProgress([]);
+    setSourcingError(null);
+    setFoundSuppliersFromSourcing([]);
+    
+    try {
+      // Call the backend API to source suppliers for this specific asset
+      const response = await fetch(`${API_BASE}/projects/${projectId}/assets/${fullAsset.id}/source`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Sourcing failed: ${response.statusText}`);
+      }
+      
+      // Handle streaming response
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
+      
+      if (reader) {
+        let buffer = "";
+        
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          
+          buffer += decoder.decode(value, { stream: true });
+          
+          // Parse SSE events
+          const lines = buffer.split("\n");
+          buffer = lines.pop() || "";
+          
+          for (const line of lines) {
+            if (line.startsWith("data: ")) {
+              try {
+                const data = JSON.parse(line.slice(6));
+                
+                if (data.message) {
+                  setSourcingProgress(prev => [...prev, data.message]);
+                }
+                
+                if (data.supplier) {
+                  setFoundSuppliersFromSourcing(prev => [...prev, data.supplier]);
+                }
+                
+                if (data.suppliers) {
+                  setFoundSuppliersFromSourcing(data.suppliers);
+                }
+                
+                if (data.error) {
+                  setSourcingError(data.error);
+                }
+              } catch {
+                // Not JSON, just add as message
+                setSourcingProgress(prev => [...prev, line.slice(6)]);
+              }
+            }
+          }
+        }
+      } else {
+        // Non-streaming response
+        const data = await response.json();
+        if (data.suppliers) {
+          setFoundSuppliersFromSourcing(data.suppliers);
+          setSourcingProgress(prev => [...prev, `Found ${data.suppliers.length} suppliers`]);
+        }
+      }
+      
+      setSourcingProgress(prev => [...prev, "✅ Sourcing complete!"]);
+    } catch (error: any) {
+      console.error("Sourcing error:", error);
+      setSourcingError(error.message || "Failed to source suppliers");
+      setSourcingProgress(prev => [...prev, `❌ Error: ${error.message}`]);
+    } finally {
+      setIsSourcing(false);
+    }
+  }, [fullAsset, projectId]);
 
   // Calculate supplier scores when asset changes
   useEffect(() => {
@@ -227,6 +327,11 @@ export function AssetDetailDrawer({
                 onClick={() => setActiveTab("3d")}
                 label="3D Model"
                 disabled={!displayAsset.model_url}
+              />
+              <TabButton 
+                active={activeTab === "sourcing"} 
+                onClick={() => setActiveTab("sourcing")}
+                label="🔍 Sourcing"
               />
               <TabButton 
                 active={activeTab === "suppliers"} 
@@ -482,6 +587,177 @@ export function AssetDetailDrawer({
                     <Text weight="plus" className="text-ui-fg-muted mb-2">No 3D Model Available</Text>
                     <Text size="small" className="text-ui-fg-subtle">
                       This asset doesn't have a 3D model yet. Generate one from the assets table.
+                    </Text>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Sourcing Tab */}
+            {activeTab === "sourcing" && (
+              <div className="space-y-4">
+                {/* Sourcing Header */}
+                <div className="bg-gradient-to-r from-blue-500/10 to-purple-500/10 rounded-lg p-4 border border-ui-border-base">
+                  <div className="flex items-center gap-x-3 mb-2">
+                    <div className="w-10 h-10 rounded-full bg-ui-bg-interactive flex items-center justify-center">
+                      <MagnifyingGlass className="w-5 h-5 text-ui-fg-on-interactive" />
+                    </div>
+                    <div>
+                      <Text weight="plus" className="text-ui-fg-base">
+                        Firecrawl Supplier Search
+                      </Text>
+                      <Text size="small" className="text-ui-fg-muted">
+                        Find real suppliers for {displayAsset.name}
+                      </Text>
+                    </div>
+                  </div>
+                  
+                  <Button
+                    variant={isSourcing ? "secondary" : "primary"}
+                    onClick={startSourcingForAsset}
+                    disabled={isSourcing}
+                    className="w-full mt-3"
+                  >
+                    {isSourcing ? (
+                      <>
+                        <ArrowPath className="w-4 h-4 mr-2 animate-spin" />
+                        Searching...
+                      </>
+                    ) : (
+                      <>
+                        <GlobeEurope className="w-4 h-4 mr-2" />
+                        Search for Suppliers
+                      </>
+                    )}
+                  </Button>
+                </div>
+
+                {/* Search Info */}
+                <div className="p-4 bg-ui-bg-subtle rounded-lg border border-ui-border-base">
+                  <Text weight="plus" size="small" className="text-ui-fg-muted mb-2">
+                    Search Strategy
+                  </Text>
+                  <div className="space-y-2 text-sm text-ui-fg-subtle">
+                    <div className="flex items-center gap-x-2">
+                      <CheckCircleSolid className="w-4 h-4 text-ui-fg-interactive" />
+                      <span>Searches multiple industrial directories</span>
+                    </div>
+                    <div className="flex items-center gap-x-2">
+                      <CheckCircleSolid className="w-4 h-4 text-ui-fg-interactive" />
+                      <span>Filters by Algeria & North Africa region</span>
+                    </div>
+                    <div className="flex items-center gap-x-2">
+                      <CheckCircleSolid className="w-4 h-4 text-ui-fg-interactive" />
+                      <span>Scrapes supplier websites for details</span>
+                    </div>
+                    <div className="flex items-center gap-x-2">
+                      <CheckCircleSolid className="w-4 h-4 text-ui-fg-interactive" />
+                      <span>Validates against compliance rules</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Progress Log */}
+                {sourcingProgress.length > 0 && (
+                  <div className="bg-ui-bg-base rounded-lg border border-ui-border-base overflow-hidden">
+                    <div className="px-4 py-2 bg-ui-bg-subtle border-b border-ui-border-base">
+                      <Text weight="plus" size="small" className="text-ui-fg-muted">
+                        Sourcing Progress
+                      </Text>
+                    </div>
+                    <div className="p-4 max-h-60 overflow-y-auto font-mono text-xs space-y-1">
+                      {sourcingProgress.map((msg, i) => (
+                        <div 
+                          key={i} 
+                          className={clx(
+                            "py-1",
+                            msg.includes("✅") && "text-green-600",
+                            msg.includes("❌") && "text-red-600",
+                            msg.includes("⚠️") && "text-yellow-600",
+                            msg.includes("🔎") && "text-blue-600",
+                            msg.includes("🌐") && "text-purple-600"
+                          )}
+                        >
+                          {msg}
+                        </div>
+                      ))}
+                      {isSourcing && (
+                        <div className="flex items-center gap-x-2 text-ui-fg-muted animate-pulse">
+                          <ArrowPath className="w-3 h-3 animate-spin" />
+                          <span>Processing...</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Error Display */}
+                {sourcingError && (
+                  <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
+                    <div className="flex items-center gap-x-2 text-red-600">
+                      <ExclamationCircle className="w-5 h-5" />
+                      <Text weight="plus">{sourcingError}</Text>
+                    </div>
+                  </div>
+                )}
+
+                {/* Found Suppliers Preview */}
+                {foundSuppliersFromSourcing.length > 0 && (
+                  <div className="space-y-3">
+                    <Text weight="plus" size="small" className="text-ui-fg-muted">
+                      Found Suppliers ({foundSuppliersFromSourcing.length})
+                    </Text>
+                    {foundSuppliersFromSourcing.map((supplier, i) => (
+                      <div 
+                        key={i}
+                        className="p-3 bg-ui-bg-subtle rounded-lg border border-ui-border-base"
+                      >
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <Text weight="plus" className="text-ui-fg-base">
+                              {supplier.name}
+                            </Text>
+                            <Text size="small" className="text-ui-fg-muted">
+                              {supplier.location || supplier.country || "Location unknown"}
+                            </Text>
+                          </div>
+                          {supplier.website && (
+                            <Button variant="secondary" size="small" asChild>
+                              <a
+                                href={supplier.website}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                              >
+                                <LinkIcon className="w-3 h-3 mr-1" />
+                                Visit
+                              </a>
+                            </Button>
+                          )}
+                        </div>
+                        {supplier.description && (
+                          <Text size="xsmall" className="text-ui-fg-subtle mt-2 line-clamp-2">
+                            {supplier.description}
+                          </Text>
+                        )}
+                        <div className="flex flex-wrap gap-1 mt-2">
+                          {supplier.certifications?.slice(0, 3).map((cert: string, j: number) => (
+                            <Badge key={j} color="grey" size="2xsmall">{cert}</Badge>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Empty State */}
+                {!isSourcing && sourcingProgress.length === 0 && foundSuppliersFromSourcing.length === 0 && (
+                  <div className="text-center py-8">
+                    <GlobeEurope className="w-12 h-12 text-ui-fg-muted mx-auto mb-3" />
+                    <Text weight="plus" className="text-ui-fg-muted mb-1">
+                      Ready to Search
+                    </Text>
+                    <Text size="small" className="text-ui-fg-subtle">
+                      Click the button above to search for suppliers using Firecrawl
                     </Text>
                   </div>
                 )}
