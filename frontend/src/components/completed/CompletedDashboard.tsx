@@ -43,6 +43,7 @@ import { FullReportDrawer } from "./FullReportDrawer";
 import { AssetDetailDrawer } from "./AssetDetailDrawer";
 import { FloorPlanDrawer } from "./FloorPlanDrawer";
 import { VideoGeneratorDrawer } from "./VideoGeneratorDrawer";
+import { GLBPreviewDialog } from "./GLBPreviewDialog";
 import { videoApi, assetsApi, dataApi } from "../../services/api";
 import {
   PieChart,
@@ -308,6 +309,11 @@ export function CompletedDashboard({
   } | null>(null);
   const [checkingProject3D, setCheckingProject3D] = useState(false);
   const [generatingProject3D, setGeneratingProject3D] = useState(false);
+
+  // GLB preview dialog state
+  const [isGLBPreviewOpen, setIsGLBPreviewOpen] = useState(false);
+  const [previewGLBUrl, setPreviewGLBUrl] = useState<string | null>(null);
+  const [previewTitle, setPreviewTitle] = useState<string>("3D Model Preview");
 
   // Fetch video projects on mount
   useEffect(() => {
@@ -1303,21 +1309,39 @@ export function CompletedDashboard({
                         </Table.Cell>
                         <Table.Cell onClick={(e) => e.stopPropagation()}>
                           {(() => {
-                            // If model_url exists, show download button
+                            // If model_url exists, show preview and download buttons
                             if (asset.model_url) {
                               return (
-                                <Button
-                                  variant="transparent"
-                                  size="small"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    window.open(asset.model_url!, "_blank");
-                                  }}
-                                  className="gap-x-1"
-                                >
-                                  <ArrowDownTray className="w-4 h-4" />
-                                  Download GLB
-                                </Button>
+                                <div className="flex items-center gap-2">
+                                  <Button
+                                    variant="transparent"
+                                    size="small"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setPreviewGLBUrl(asset.model_url!);
+                                      setPreviewTitle(`${asset.name} - 3D Model`);
+                                      setIsGLBPreviewOpen(true);
+                                    }}
+                                    className="gap-x-1"
+                                  >
+                                    <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                      <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
+                                    </svg>
+                                    Preview
+                                  </Button>
+                                  <Button
+                                    variant="transparent"
+                                    size="small"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      window.open(asset.model_url!, "_blank");
+                                    }}
+                                    className="gap-x-1"
+                                  >
+                                    <ArrowDownTray className="w-4 h-4" />
+                                    Download
+                                  </Button>
+                                </div>
                               );
                             }
                             
@@ -1643,15 +1667,32 @@ export function CompletedDashboard({
                       3D model file
                     </Text>
                   </div>
-                  <Button
-                    variant="primary"
-                    size="small"
-                    onClick={() => window.open(project.model_url!, "_blank")}
-                    className="gap-2"
-                  >
-                    <ArrowDownTray className="w-4 h-4" />
-                    Download 3D Model
-                  </Button>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="primary"
+                      size="small"
+                      onClick={() => {
+                        setPreviewGLBUrl(project.model_url!);
+                        setPreviewTitle("Factory 3D Model");
+                        setIsGLBPreviewOpen(true);
+                      }}
+                      className="gap-2"
+                    >
+                      <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
+                      </svg>
+                      Preview 3D Model
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      size="small"
+                      onClick={() => window.open(project.model_url!, "_blank")}
+                      className="gap-2"
+                    >
+                      <ArrowDownTray className="w-4 h-4" />
+                      Download
+                    </Button>
+                  </div>
                 </div>
               </Container>
             ) : project.meshy_id ? (
@@ -2327,6 +2368,19 @@ export function CompletedDashboard({
         onSave={handleVideoSave}
         onDelete={handleVideoDelete}
       />
+
+      {/* GLB Preview Dialog */}
+      {previewGLBUrl && (
+        <GLBPreviewDialog
+          isOpen={isGLBPreviewOpen}
+          onClose={() => {
+            setIsGLBPreviewOpen(false);
+            setPreviewGLBUrl(null);
+          }}
+          glbUrl={previewGLBUrl}
+          title={previewTitle}
+        />
+      )}
     </div>
   );
 }
