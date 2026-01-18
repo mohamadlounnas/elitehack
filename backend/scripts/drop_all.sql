@@ -24,3 +24,4 @@ DROP TABLE IF EXISTS projects CASCADE;
 -- Confirm drop
 SELECT 'All tables dropped successfully!' as status;
 
+

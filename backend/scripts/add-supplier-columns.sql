@@ -34,3 +34,4 @@ ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS verified BOOLEAN DEFAULT FALSE;
 -- Confirm success
 SELECT 'Supplier columns added successfully!' as status;
 
+

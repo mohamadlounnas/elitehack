@@ -35,3 +35,4 @@ UNION ALL
 SELECT 'tco_calculations', COUNT(*) FROM tco_calculations;
 
 
+

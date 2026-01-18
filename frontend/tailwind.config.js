@@ -8,6 +8,7 @@ export default {
     "./src/**/*.{js,ts,jsx,tsx}",
     "./node_modules/@medusajs/ui/dist/**/*.{js,ts,jsx,tsx}",
   ],
+  darkMode: "class",
   presets: [medusaPreset],
   theme: {
     extend: {},

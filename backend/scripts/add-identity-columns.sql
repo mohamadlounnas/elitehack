@@ -19,3 +19,4 @@ ALTER TABLE projects ADD COLUMN IF NOT EXISTS brand_identity JSONB DEFAULT '{}':
 -- ===========================================
 SELECT 'Brand identity columns added successfully!' as status;
 
+

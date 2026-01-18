@@ -56,3 +56,4 @@ COMMENT ON COLUMN projects.business_plan_excel IS 'Path to the generated busines
 addBusinessPlanExcelColumn();
 
 
+

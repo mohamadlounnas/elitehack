@@ -1,8 +1,10 @@
-import { Buildings, Plus } from "@medusajs/icons";
-import { Divider, Text, Button, clx } from "@medusajs/ui";
+import { Buildings, Plus, Sun, Moon, CircleHalfSolid } from "@medusajs/icons";
+import { Divider, Text, Button, clx, Tooltip } from "@medusajs/ui";
 import { NavLink, useLocation } from "react-router-dom";
 import { useState } from "react";
 import { CreateProjectDrawer } from "./create-project-drawer";
+import { useTheme } from "../../providers/theme-provider/theme-provider";
+import type { ThemeOption } from "../../providers/theme-provider/theme-context";
 
 export const MainSidebar = () => {
   const [showCreateDrawer, setShowCreateDrawer] = useState(false);
@@ -21,17 +23,18 @@ export const MainSidebar = () => {
             <div className="flex flex-1 flex-col">
               <CoreRouteSection />
             </div>
-            <div className="p-3 border-t">
-              <Button
-                variant="secondary"
-                size="small"
-                className="w-full"
-                onClick={() => setShowCreateDrawer(true)}
-              >
-                <Plus />
-                Create Project
-              </Button>
-            </div>
+                    <div className="p-3 border-t flex flex-col gap-2">
+                      <Button
+                        variant="secondary"
+                        size="small"
+                        className="w-full"
+                        onClick={() => setShowCreateDrawer(true)}
+                      >
+                        <Plus />
+                        Create Project
+                      </Button>
+                      <ThemeToggle />
+                    </div>
           </div>
         </div>
       </aside>
@@ -92,6 +95,33 @@ const CoreRouteSection = () => {
         );
       })}
     </nav>
+  );
+};
+
+const themeConfig: Record<ThemeOption, { icon: React.ReactNode; label: string; next: ThemeOption }> = {
+  light: { icon: <Sun className="text-ui-fg-subtle" />, label: "Light", next: "dark" },
+  dark: { icon: <Moon className="text-ui-fg-subtle" />, label: "Dark", next: "system" },
+  system: { icon: <CircleHalfSolid className="text-ui-fg-subtle" />, label: "System", next: "light" },
+};
+
+const ThemeToggle = () => {
+  const { theme, setTheme } = useTheme();
+  const config = themeConfig[theme];
+
+  return (
+    <Tooltip content={`Theme: ${config.label} (click to change)`}>
+      <button
+        onClick={() => setTheme(config.next)}
+        className="flex items-center gap-x-2 w-full rounded-md py-1.5 px-2 text-ui-fg-subtle hover:bg-ui-bg-subtle-hover transition-colors"
+      >
+        <div className="flex size-5 items-center justify-center">
+          {config.icon}
+        </div>
+        <Text size="small" weight="plus" leading="compact" className="text-ui-fg-subtle">
+          {config.label}
+        </Text>
+      </button>
+    </Tooltip>
   );
 };
 

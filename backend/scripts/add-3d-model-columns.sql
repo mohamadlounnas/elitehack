@@ -12,3 +12,4 @@ ADD COLUMN IF NOT EXISTS model_url TEXT;
 COMMENT ON COLUMN assets.meshy_id IS 'Task ID from Meshy3D API for tracking 3D model generation';
 COMMENT ON COLUMN assets.model_url IS 'URL to the generated 3D model GLB file from Meshy3D';
 
+

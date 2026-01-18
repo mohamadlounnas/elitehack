@@ -330,3 +330,4 @@ The asset image generation system:
 
 The prompt is specifically designed to produce clean, professional, isolated product images suitable for factory planning documentation and technical specifications.
 
+

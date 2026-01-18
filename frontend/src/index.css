@@ -1,3 +1,122 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* 
+ * Light theme CSS variables for Medusa UI
+ * Only apply when NOT in dark mode
+ */
+html:not(.dark) {
+  /* Background colors */
+  --bg-base: rgba(255, 255, 255, 1);
+  --bg-base-hover: rgba(244, 244, 245, 1);
+  --bg-base-pressed: rgba(228, 228, 231, 1);
+  --bg-subtle: rgba(250, 250, 250, 1);
+  --bg-subtle-hover: rgba(244, 244, 245, 1);
+  --bg-subtle-pressed: rgba(228, 228, 231, 1);
+  --bg-field: rgba(250, 250, 250, 1);
+  --bg-field-hover: rgba(244, 244, 245, 1);
+  --bg-field-component: rgba(255, 255, 255, 1);
+  --bg-field-component-hover: rgba(250, 250, 250, 1);
+  --bg-interactive: rgba(59, 130, 246, 1);
+  --bg-overlay: rgba(9, 9, 11, 0.4);
+  --bg-disabled: rgba(244, 244, 245, 1);
+  --bg-highlight: rgba(219, 234, 254, 1);
+  --bg-highlight-hover: rgba(191, 219, 254, 1);
+  --bg-switch-off: rgba(212, 212, 216, 1);
+  --bg-switch-off-hover: rgba(161, 161, 170, 1);
+  
+  /* Foreground/text colors */
+  --fg-base: rgba(9, 9, 11, 1);
+  --fg-subtle: rgba(82, 82, 91, 1);
+  --fg-muted: rgba(161, 161, 170, 1);
+  --fg-disabled: rgba(212, 212, 216, 1);
+  --fg-on-color: rgba(255, 255, 255, 1);
+  --fg-on-inverted: rgba(255, 255, 255, 1);
+  --fg-interactive: rgba(59, 130, 246, 1);
+  --fg-interactive-hover: rgba(37, 99, 235, 1);
+  --fg-error: rgba(225, 29, 72, 1);
+  
+  /* Border colors */
+  --border-base: rgba(228, 228, 231, 1);
+  --border-strong: rgba(212, 212, 216, 1);
+  --border-loud: rgba(9, 9, 11, 1);
+  --border-interactive: rgba(59, 130, 246, 1);
+  --border-error: rgba(225, 29, 72, 1);
+  --border-danger: rgba(225, 29, 72, 1);
+  --border-transparent: rgba(9, 9, 11, 0.08);
+  
+  /* Contrast colors */
+  --contrast-bg-base: rgba(24, 24, 27, 1);
+  --contrast-bg-base-hover: rgba(39, 39, 42, 1);
+  --contrast-bg-base-pressed: rgba(63, 63, 70, 1);
+  --contrast-bg-subtle: rgba(39, 39, 42, 1);
+  --contrast-bg-highlight: rgba(63, 63, 70, 1);
+  --contrast-fg-primary: rgba(250, 250, 250, 1);
+  --contrast-fg-secondary: rgba(212, 212, 216, 1);
+  --contrast-border-base: rgba(63, 63, 70, 1);
+  
+  /* Button colors */
+  --button-inverted: rgba(24, 24, 27, 1);
+  --button-inverted-hover: rgba(39, 39, 42, 1);
+  --button-inverted-pressed: rgba(63, 63, 70, 1);
+  --button-neutral: rgba(255, 255, 255, 1);
+  --button-neutral-hover: rgba(244, 244, 245, 1);
+  --button-neutral-pressed: rgba(228, 228, 231, 1);
+  --button-danger: rgba(225, 29, 72, 1);
+  --button-danger-hover: rgba(190, 18, 60, 1);
+  --button-danger-pressed: rgba(159, 18, 57, 1);
+  --button-transparent: rgba(0, 0, 0, 0);
+  --button-transparent-hover: rgba(0, 0, 0, 0.04);
+  --button-transparent-pressed: rgba(0, 0, 0, 0.08);
+  
+  /* Tag colors */
+  --tag-neutral-bg: rgba(244, 244, 245, 1);
+  --tag-neutral-bg-hover: rgba(228, 228, 231, 1);
+  --tag-neutral-text: rgba(82, 82, 91, 1);
+  --tag-neutral-icon: rgba(113, 113, 122, 1);
+  --tag-neutral-border: rgba(228, 228, 231, 1);
+  
+  --tag-green-bg: rgba(220, 252, 231, 1);
+  --tag-green-bg-hover: rgba(187, 247, 208, 1);
+  --tag-green-text: rgba(22, 101, 52, 1);
+  --tag-green-icon: rgba(34, 197, 94, 1);
+  --tag-green-border: rgba(187, 247, 208, 1);
+  
+  --tag-blue-bg: rgba(219, 234, 254, 1);
+  --tag-blue-bg-hover: rgba(191, 219, 254, 1);
+  --tag-blue-text: rgba(30, 64, 175, 1);
+  --tag-blue-icon: rgba(59, 130, 246, 1);
+  --tag-blue-border: rgba(191, 219, 254, 1);
+  
+  --tag-red-bg: rgba(254, 226, 226, 1);
+  --tag-red-bg-hover: rgba(254, 202, 202, 1);
+  --tag-red-text: rgba(153, 27, 27, 1);
+  --tag-red-icon: rgba(239, 68, 68, 1);
+  --tag-red-border: rgba(254, 202, 202, 1);
+  
+  --tag-orange-bg: rgba(255, 237, 213, 1);
+  --tag-orange-bg-hover: rgba(254, 215, 170, 1);
+  --tag-orange-text: rgba(154, 52, 18, 1);
+  --tag-orange-icon: rgba(249, 115, 22, 1);
+  --tag-orange-border: rgba(254, 215, 170, 1);
+  
+  --tag-purple-bg: rgba(243, 232, 255, 1);
+  --tag-purple-bg-hover: rgba(233, 213, 255, 1);
+  --tag-purple-text: rgba(107, 33, 168, 1);
+  --tag-purple-icon: rgba(168, 85, 247, 1);
+  --tag-purple-border: rgba(233, 213, 255, 1);
+  
+  /* Code block */
+  --code-bg: rgba(244, 244, 245, 1);
+  --code-border: rgba(228, 228, 231, 1);
+  --code-text: rgba(39, 39, 42, 1);
+  
+  color-scheme: light;
+}
+
+/* Light mode body styles */
+html:not(.dark) body {
+  background-color: var(--bg-subtle);
+  color: var(--fg-base);
+}

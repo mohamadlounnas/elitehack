@@ -46,6 +46,7 @@ import { FloorPlanDrawer } from "./FloorPlanDrawer";
 import { VideoGeneratorDrawer } from "./VideoGeneratorDrawer";
 import { GLBPreviewDialog } from "./GLBPreviewDialog";
 import { SourcingProgressDialog } from "./SourcingProgressDialog";
+import { SVGFloorPlanDialog } from "./SVGFloorPlanDialog";
 import { videoApi, assetsApi, dataApi } from "../../services/api";
 import {
   PieChart,
@@ -320,6 +321,9 @@ export function CompletedDashboard({
   // Sourcing dialog state
   const [isSourcingDialogOpen, setIsSourcingDialogOpen] = useState(false);
 
+  // SVG Floor Plan dialog state
+  const [isSVGFloorPlanDialogOpen, setIsSVGFloorPlanDialogOpen] = useState(false);
+
   // Fetch video projects on mount
   useEffect(() => {
     const fetchVideos = async () => {
@@ -531,6 +535,23 @@ export function CompletedDashboard({
           </div>
         </div>
         <div className="flex items-center gap-x-2">
+          {/* SVG Floor Plan Test Button */}
+          <Button 
+            variant="secondary" 
+            size="small" 
+            onClick={() => setIsSVGFloorPlanDialogOpen(true)}
+            className="gap-x-2"
+          >
+            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <rect x="3" y="3" width="18" height="18" rx="2" />
+              <line x1="9" y1="3" x2="9" y2="21" />
+              <line x1="15" y1="3" x2="15" y2="21" />
+              <line x1="3" y1="9" x2="21" y2="9" />
+              <line x1="3" y1="15" x2="21" y2="15" />
+            </svg>
+            SVG Layout
+          </Button>
+          
           {/* Generate Full Report Button - Primary CTA */}
           <Button 
             variant="primary" 
@@ -2488,6 +2509,13 @@ export function CompletedDashboard({
           // Refresh suppliers data after sourcing completes
           window.location.reload();
         }}
+      />
+
+      {/* SVG Floor Plan Dialog */}
+      <SVGFloorPlanDialog
+        isOpen={isSVGFloorPlanDialogOpen}
+        onClose={() => setIsSVGFloorPlanDialogOpen(false)}
+        projectId={project.id}
       />
     </div>
   );

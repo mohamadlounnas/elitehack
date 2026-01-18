@@ -68,3 +68,4 @@ COMMENT ON TABLE asset_suppliers IS 'Junction table linking assets to multiple s
 
 SELECT 'Asset-Suppliers migration completed!' as status;
 
+

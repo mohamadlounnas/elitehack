@@ -1458,5 +1458,898 @@ router.get("/:id/glb-proxy", async (req, res) => {
   }
 });
 
+/**
+ * Generate SVG Floor Plan Layout (Test Purpose - Not Stored)
+ * Uses AI to generate an SVG with equipment layout and connections
+ */
+router.post("/:id/layout-floor-svg", async (req, res) => {
+  try {
+    const { id } = req.params;
+    logger.info("Generating SVG floor plan layout", { projectId: id });
+
+    // Get project data
+    const { data: project, error: projectError } = await supabase
+      .from("projects")
+      .select("*, planning_data")
+      .eq("id", id)
+      .single();
+
+    if (projectError || !project) {
+      return res.status(404).json({ error: "Project not found" });
+    }
+
+    // Get production machine assets only
+    const { data: assets, error: assetsError } = await supabase
+      .from("assets")
+      .select("id, name, type, description, specifications")
+      .eq("project_id", id)
+      .eq("type", "Production Machine");
+
+    if (assetsError) {
+      logger.error("Error fetching assets", assetsError);
+      return res.status(500).json({ error: "Failed to fetch assets" });
+    }
+
+    const planningData = project.planning_data || {};
+    const factoryDimensions = planningData.factory_dimensions || { width: 50, length: 100 };
+    const productionLines = planningData.production_lines || [];
+    const factoryEngineering = planningData.factory_engineering || {};
+
+    // Build equipment list for AI
+    const equipmentList = (assets || []).map((a: any) => a.name).join(", ");
+
+    // Build zones info
+    const zones = factoryEngineering.zoning_concept?.zones || [];
+    const zonesInfo = zones.map((z: any) => `${z.zone_name}: ${z.purpose}`).join("; ");
+
+    // Build production lines info
+    const linesInfo = productionLines.map((l: any) => `${l.line_name}: ${l.function}`).join("; ");
+
+    // AI Prompt for SVG generation
+    const svgPrompt = `Generate a clean, professional SVG factory floor plan layout.
+
+FACTORY DIMENSIONS:
+- Width: ${factoryDimensions.width}m
+- Length: ${factoryDimensions.length}m
+
+PRODUCTION MACHINES TO INCLUDE:
+${equipmentList || "Standard production equipment"}
+
+ZONES (if any):
+${zonesInfo || "Production area, Storage area, Office area"}
+
+PRODUCTION LINES (if any):
+${linesInfo || "Main production line"}
+
+REQUIREMENTS:
+1. Create a valid SVG with viewBox="0 0 800 600"
+2. Draw the factory outline as a rectangle with dark gray stroke (#374151)
+3. Use DISTINCT COLORS for different elements:
+   - Walls/Outline: Dark gray (#374151) with 3px stroke
+   - Production Machines: Blue (#3B82F6) rectangles with rounded corners
+   - Conveyors/Connections: Orange (#F59E0B) dashed lines between machines
+   - Storage Areas: Green (#10B981) rectangles
+   - Office Areas: Purple (#8B5CF6) rectangles
+   - Utility Areas: Cyan (#06B6D4) rectangles
+   - Pathways: Light gray (#E5E7EB) rectangles
+   - Entry/Exit points: Red (#EF4444) triangles/arrows
+4. Add equipment LABELS below each machine (small text, 10px font)
+5. Draw FLOW ARROWS (orange dashed lines) showing material flow between machines
+6. Include a simple LEGEND in the bottom-right corner
+7. Keep the design CLEAN and READABLE
+8. Use simple geometric shapes (rectangles, circles, triangles)
+9. Position machines logically following production flow (left to right or top to bottom)
+10. Leave adequate spacing between equipment for pathways
+
+OUTPUT: Return ONLY the SVG code, starting with <svg and ending with </svg>. No markdown, no explanation.`;
+
+    // Call Gemini AI to generate SVG
+    if (!genAI) {
+      return res.status(500).json({ error: "AI service not configured" });
+    }
+
+    const model = genAI.getGenerativeModel({ model: "models/gemini-3-pro-preview" });
+    
+    const result = await model.generateContent(svgPrompt);
+    const response = result.response;
+    const text = response.text();
+
+    // Extract SVG from response (in case there's any extra text)
+    const svgMatch = text.match(/<svg[\s\S]*<\/svg>/i);
+    if (!svgMatch) {
+      logger.error("AI did not return valid SVG", { response: text.substring(0, 500) });
+      return res.status(500).json({ error: "Failed to generate valid SVG" });
+    }
+
+    const svgContent = svgMatch[0];
+
+    logger.info("SVG floor plan generated successfully", { projectId: id, svgLength: svgContent.length });
+
+    res.json({
+      success: true,
+      svg: svgContent,
+      metadata: {
+        factory_width: factoryDimensions.width,
+        factory_length: factoryDimensions.length,
+        equipment_count: (assets || []).length,
+        generated_at: new Date().toISOString(),
+      }
+    });
+  } catch (error: any) {
+    logger.error("Error generating SVG floor plan", error, { projectId: req.params.id });
+    res.status(500).json({ error: error.message || "Failed to generate SVG floor plan" });
+  }
+});
+
+/**
+ * Convert SVG to DXF Floor Plan Layout
+ * Takes the AI-generated SVG and converts it to DXF format
+ */
+router.post("/:id/convert-svg-to-dxf", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { svgContent } = req.body;
+    
+    if (!svgContent) {
+      return res.status(400).json({ error: "SVG content is required" });
+    }
+    
+    logger.info("Converting SVG to DXF", { projectId: id });
+    
+    // Parse SVG and convert to DXF
+    const dxfContent = convertSvgToDxf(svgContent);
+    
+    // Extract dimensions from SVG viewBox
+    const viewBoxMatch = svgContent.match(/viewBox="([^"]+)"/);
+    let width = 100, height = 100;
+    if (viewBoxMatch) {
+      const parts = viewBoxMatch[1].split(/\s+/);
+      if (parts.length >= 4) {
+        width = parseFloat(parts[2]) || 100;
+        height = parseFloat(parts[3]) || 100;
+      }
+    }
+    
+    res.json({
+      success: true,
+      dxf: dxfContent,
+      metadata: {
+        factory_width: width,
+        factory_length: height,
+        converted_from: "svg",
+        generated_at: new Date().toISOString(),
+        format: "DXF AC1009",
+        units: "meters"
+      }
+    });
+  } catch (error: any) {
+    logger.error("Error converting SVG to DXF", error, { projectId: req.params.id });
+    res.status(500).json({ error: error.message || "Failed to convert SVG to DXF" });
+  }
+});
+
+/**
+ * Generate DXF Floor Plan Layout (Test Purpose - Not Stored)
+ * Generates a proper DXF file with equipment layout
+ * DXF is a CAD format compatible with AutoCAD and other CAD software
+ */
+router.post("/:id/layout-floor-dxf", async (req, res) => {
+  try {
+    const { id } = req.params;
+    logger.info("Generating DXF floor plan layout", { projectId: id });
+
+    // Get project data
+    const { data: project, error: projectError } = await supabase
+      .from("projects")
+      .select("*, planning_data")
+      .eq("id", id)
+      .single();
+
+    if (projectError || !project) {
+      return res.status(404).json({ error: "Project not found" });
+    }
+
+    // Get production machine assets only
+    const { data: assets, error: assetsError } = await supabase
+      .from("assets")
+      .select("id, name, type, description, specifications")
+      .eq("project_id", id)
+      .eq("type", "Production Machine");
+
+    if (assetsError) {
+      logger.error("Error fetching assets", assetsError);
+      return res.status(500).json({ error: "Failed to fetch assets" });
+    }
+
+    const planningData = project.planning_data || {};
+    const factoryDimensions = planningData.factory_dimensions || { width: 50, length: 100 };
+    const factoryEngineering = planningData.factory_engineering || {};
+    const zones = factoryEngineering.zoning_concept?.zones || [];
+
+    // Generate proper DXF file
+    const dxfContent = generateProperDXF(factoryDimensions, assets || [], zones);
+
+    logger.info("DXF floor plan generated successfully", { projectId: id, dxfLength: dxfContent.length });
+
+    res.json({
+      success: true,
+      dxf: dxfContent,
+      metadata: {
+        factory_width: factoryDimensions.width,
+        factory_length: factoryDimensions.length,
+        equipment_count: (assets || []).length,
+        generated_at: new Date().toISOString(),
+        format: "DXF AC1009",
+        units: "meters"
+      }
+    });
+  } catch (error: any) {
+    logger.error("Error generating DXF floor plan", error, { projectId: req.params.id });
+    res.status(500).json({ error: error.message || "Failed to generate DXF floor plan" });
+  }
+});
+
+/**
+ * Convert SVG content to DXF format
+ * Parses SVG elements and creates corresponding DXF entities
+ */
+function convertSvgToDxf(svgContent: string): string {
+  const dxf = new DXFWriter();
+  
+  // Extract viewBox dimensions
+  const viewBoxMatch = svgContent.match(/viewBox="([^"]+)"/);
+  let width = 100, height = 100;
+  if (viewBoxMatch) {
+    const parts = viewBoxMatch[1].split(/\s+/);
+    if (parts.length >= 4) {
+      width = parseFloat(parts[2]) || 100;
+      height = parseFloat(parts[3]) || 100;
+    }
+  }
+  
+  // Add header
+  dxf.addHeader(width, height);
+  
+  // Add tables with layer definitions
+  dxf.addTables();
+  
+  // Add blocks section
+  dxf.addBlocks();
+  
+  // Start entities
+  dxf.startEntities();
+  
+  // Parse and convert SVG elements
+  
+  // Extract all rectangles (rect elements)
+  const rectRegex = /<rect[^>]*>/gi;
+  const rects = svgContent.match(rectRegex) || [];
+  
+  for (const rect of rects) {
+    const x = parseFloat(rect.match(/x="([^"]+)"/)?.[1] || "0");
+    const y = parseFloat(rect.match(/y="([^"]+)"/)?.[1] || "0");
+    const w = parseFloat(rect.match(/width="([^"]+)"/)?.[1] || "0");
+    const h = parseFloat(rect.match(/height="([^"]+)"/)?.[1] || "0");
+    const fill = rect.match(/fill="([^"]+)"/)?.[1] || "";
+    const stroke = rect.match(/stroke="([^"]+)"/)?.[1] || "";
+    
+    // Determine layer based on color
+    let layer = "0";
+    let color: number | undefined;
+    const colorStr = fill || stroke;
+    
+    if (colorStr.includes("404040") || colorStr.includes("gray") || colorStr.includes("333")) {
+      layer = "WALLS";
+      color = 7;
+    } else if (colorStr.includes("4169e1") || colorStr.includes("4682b4") || colorStr.includes("1e90ff") || colorStr.includes("blue")) {
+      layer = "MACHINES";
+      color = 5;
+    } else if (colorStr.includes("ff8c00") || colorStr.includes("ffa500") || colorStr.includes("orange")) {
+      layer = "CONVEYORS";
+      color = 30;
+    } else if (colorStr.includes("228b22") || colorStr.includes("32cd32") || colorStr.includes("green")) {
+      layer = "STORAGE";
+      color = 3;
+    } else if (colorStr.includes("8b008b") || colorStr.includes("9932cc") || colorStr.includes("purple") || colorStr.includes("800080")) {
+      layer = "OFFICE";
+      color = 6;
+    } else if (colorStr.includes("008b8b") || colorStr.includes("20b2aa") || colorStr.includes("cyan") || colorStr.includes("teal")) {
+      layer = "UTILITIES";
+      color = 4;
+    } else if (colorStr.includes("808080") || colorStr.includes("a9a9a9") || colorStr.includes("696969")) {
+      layer = "PATHWAYS";
+      color = 8;
+    }
+    
+    // Convert Y coordinate (SVG Y is top-down, DXF Y is bottom-up)
+    const dxfY = height - y - h;
+    
+    if (w > 0 && h > 0) {
+      dxf.addRectangle(layer, x, dxfY, w, h, color);
+    }
+  }
+  
+  // Extract all lines
+  const lineRegex = /<line[^>]*>/gi;
+  const lines = svgContent.match(lineRegex) || [];
+  
+  for (const line of lines) {
+    const x1 = parseFloat(line.match(/x1="([^"]+)"/)?.[1] || "0");
+    const y1 = parseFloat(line.match(/y1="([^"]+)"/)?.[1] || "0");
+    const x2 = parseFloat(line.match(/x2="([^"]+)"/)?.[1] || "0");
+    const y2 = parseFloat(line.match(/y2="([^"]+)"/)?.[1] || "0");
+    const stroke = line.match(/stroke="([^"]+)"/)?.[1] || "";
+    
+    let layer = "0";
+    let color: number | undefined;
+    
+    if (stroke.includes("ff8c00") || stroke.includes("ffa500") || stroke.includes("orange")) {
+      layer = "CONVEYORS";
+      color = 30;
+    } else if (stroke.includes("404040") || stroke.includes("gray")) {
+      layer = "WALLS";
+      color = 7;
+    }
+    
+    // Convert Y coordinates
+    const dxfY1 = height - y1;
+    const dxfY2 = height - y2;
+    
+    dxf.addLine(layer, x1, dxfY1, x2, dxfY2, color);
+  }
+  
+  // Extract polylines/paths for arrows and complex shapes
+  const polylineRegex = /<polyline[^>]*points="([^"]+)"[^>]*>/gi;
+  let polyMatch;
+  while ((polyMatch = polylineRegex.exec(svgContent)) !== null) {
+    const pointsStr = polyMatch[1];
+    const points = pointsStr.trim().split(/\s+/).map(p => {
+      const [x, y] = p.split(",").map(Number);
+      return { x, y: height - y };
+    });
+    
+    // Draw as connected lines
+    for (let i = 0; i < points.length - 1; i++) {
+      dxf.addLine("CONVEYORS", points[i].x, points[i].y, points[i + 1].x, points[i + 1].y, 30);
+    }
+  }
+  
+  // Extract all text elements
+  const textRegex = /<text[^>]*>([^<]*)<\/text>/gi;
+  let textMatch;
+  while ((textMatch = textRegex.exec(svgContent)) !== null) {
+    const textElement = textMatch[0];
+    const textContent = textMatch[1].trim();
+    
+    if (!textContent) continue;
+    
+    const x = parseFloat(textElement.match(/x="([^"]+)"/)?.[1] || "0");
+    const y = parseFloat(textElement.match(/y="([^"]+)"/)?.[1] || "0");
+    const fontSize = parseFloat(textElement.match(/font-size="([^"]+)"/)?.[1] || "2");
+    
+    // Convert Y coordinate
+    const dxfY = height - y;
+    
+    // Text height in DXF (scale from SVG font-size)
+    const textHeight = Math.max(0.3, fontSize * 0.3);
+    
+    dxf.addText("TEXT", x, dxfY, textHeight, textContent);
+  }
+  
+  // Extract circles
+  const circleRegex = /<circle[^>]*>/gi;
+  const circles = svgContent.match(circleRegex) || [];
+  
+  for (const circle of circles) {
+    const cx = parseFloat(circle.match(/cx="([^"]+)"/)?.[1] || "0");
+    const cy = parseFloat(circle.match(/cy="([^"]+)"/)?.[1] || "0");
+    const r = parseFloat(circle.match(/r="([^"]+)"/)?.[1] || "1");
+    const fill = circle.match(/fill="([^"]+)"/)?.[1] || "";
+    
+    // Convert Y coordinate
+    const dxfY = height - cy;
+    
+    let color: number | undefined;
+    if (fill.includes("dc143c") || fill.includes("red") || fill.includes("ff")) {
+      color = 1; // Red
+    }
+    
+    dxf.addCircle("WALLS", cx, dxfY, r, color);
+  }
+  
+  // Extract polygons (like triangles for entry/exit points)
+  const polygonRegex = /<polygon[^>]*points="([^"]+)"[^>]*>/gi;
+  let polygonMatch;
+  while ((polygonMatch = polygonRegex.exec(svgContent)) !== null) {
+    const pointsStr = polygonMatch[1];
+    const fill = polygonMatch[0].match(/fill="([^"]+)"/)?.[1] || "";
+    
+    const points = pointsStr.trim().split(/\s+/).map(p => {
+      const [x, y] = p.split(",").map(Number);
+      return { x, y: height - y };
+    });
+    
+    let color: number | undefined;
+    if (fill.includes("dc143c") || fill.includes("red")) {
+      color = 1;
+    }
+    
+    // Draw as connected lines
+    for (let i = 0; i < points.length; i++) {
+      const next = (i + 1) % points.length;
+      dxf.addLine("WALLS", points[i].x, points[i].y, points[next].x, points[next].y, color);
+    }
+  }
+  
+  // Add title block
+  dxf.addText("DIMENSIONS", 0, height + 3, 1.5, "FACTORY FLOOR PLAN (Converted from SVG)");
+  dxf.addText("DIMENSIONS", 0, height + 6, 0.8, `Scale: 1 unit = 1 meter | Dimensions: ${width}m x ${height}m`);
+  
+  // End entities
+  dxf.endEntities();
+  
+  // End file
+  dxf.end();
+  
+  return dxf.toString();
+}
+
+/**
+ * DXF Writer Helper Class
+ */
+class DXFWriter {
+  private lines: string[] = [];
+  private handle = 100;
+
+  private nextHandle(): string {
+    return (this.handle++).toString(16).toUpperCase();
+  }
+
+  add(code: number, value: string | number): void {
+    this.lines.push(code.toString());
+    this.lines.push(value.toString());
+  }
+
+  addSection(name: string): void {
+    this.add(0, "SECTION");
+    this.add(2, name);
+  }
+
+  endSection(): void {
+    this.add(0, "ENDSEC");
+  }
+
+  toString(): string {
+    return this.lines.join("\r\n");
+  }
+
+  // Add header section
+  addHeader(width: number, height: number): void {
+    this.addSection("HEADER");
+    
+    // AutoCAD version
+    this.add(9, "$ACADVER");
+    this.add(1, "AC1009");
+    
+    // Drawing units (6 = meters)
+    this.add(9, "$INSUNITS");
+    this.add(70, 6);
+    
+    // Drawing extents min
+    this.add(9, "$EXTMIN");
+    this.add(10, 0);
+    this.add(20, 0);
+    this.add(30, 0);
+    
+    // Drawing extents max
+    this.add(9, "$EXTMAX");
+    this.add(10, width);
+    this.add(20, height);
+    this.add(30, 0);
+    
+    // Limits min
+    this.add(9, "$LIMMIN");
+    this.add(10, 0);
+    this.add(20, 0);
+    
+    // Limits max
+    this.add(9, "$LIMMAX");
+    this.add(10, width);
+    this.add(20, height);
+    
+    this.endSection();
+  }
+
+  // Add tables section with layers
+  addTables(): void {
+    this.addSection("TABLES");
+    
+    // VPORT table
+    this.add(0, "TABLE");
+    this.add(2, "VPORT");
+    this.add(70, 0);
+    this.add(0, "ENDTAB");
+    
+    // LTYPE table
+    this.add(0, "TABLE");
+    this.add(2, "LTYPE");
+    this.add(70, 2);
+    
+    // CONTINUOUS linetype
+    this.add(0, "LTYPE");
+    this.add(2, "CONTINUOUS");
+    this.add(70, 0);
+    this.add(3, "Solid line");
+    this.add(72, 65);
+    this.add(73, 0);
+    this.add(40, 0);
+    
+    // DASHED linetype
+    this.add(0, "LTYPE");
+    this.add(2, "DASHED");
+    this.add(70, 0);
+    this.add(3, "Dashed line");
+    this.add(72, 65);
+    this.add(73, 2);
+    this.add(40, 1);
+    this.add(49, 0.5);
+    this.add(49, -0.5);
+    
+    this.add(0, "ENDTAB");
+    
+    // LAYER table
+    this.add(0, "TABLE");
+    this.add(2, "LAYER");
+    this.add(70, 10);
+    
+    // Layer 0 (default)
+    this.addLayer("0", 7, "CONTINUOUS");
+    // Walls layer
+    this.addLayer("WALLS", 7, "CONTINUOUS");
+    // Machines layer
+    this.addLayer("MACHINES", 5, "CONTINUOUS");
+    // Conveyors layer
+    this.addLayer("CONVEYORS", 30, "DASHED");
+    // Storage layer
+    this.addLayer("STORAGE", 3, "CONTINUOUS");
+    // Office layer
+    this.addLayer("OFFICE", 6, "CONTINUOUS");
+    // Utilities layer
+    this.addLayer("UTILITIES", 4, "CONTINUOUS");
+    // Text layer
+    this.addLayer("TEXT", 7, "CONTINUOUS");
+    // Pathways layer
+    this.addLayer("PATHWAYS", 8, "CONTINUOUS");
+    // Dimensions layer
+    this.addLayer("DIMENSIONS", 1, "CONTINUOUS");
+    
+    this.add(0, "ENDTAB");
+    
+    // STYLE table
+    this.add(0, "TABLE");
+    this.add(2, "STYLE");
+    this.add(70, 1);
+    
+    this.add(0, "STYLE");
+    this.add(2, "STANDARD");
+    this.add(70, 0);
+    this.add(40, 0);
+    this.add(41, 1);
+    this.add(50, 0);
+    this.add(71, 0);
+    this.add(42, 2.5);
+    this.add(3, "txt");
+    this.add(4, "");
+    
+    this.add(0, "ENDTAB");
+    
+    this.endSection();
+  }
+
+  private addLayer(name: string, color: number, lineType: string): void {
+    this.add(0, "LAYER");
+    this.add(2, name);
+    this.add(70, 0);
+    this.add(62, color);
+    this.add(6, lineType);
+  }
+
+  // Add blocks section (empty for basic DXF)
+  addBlocks(): void {
+    this.addSection("BLOCKS");
+    this.endSection();
+  }
+
+  // Start entities section
+  startEntities(): void {
+    this.addSection("ENTITIES");
+  }
+
+  // End entities section
+  endEntities(): void {
+    this.endSection();
+  }
+
+  // Add LINE entity
+  addLine(layer: string, x1: number, y1: number, x2: number, y2: number, color?: number): void {
+    this.add(0, "LINE");
+    this.add(8, layer);
+    if (color !== undefined) this.add(62, color);
+    this.add(10, x1);
+    this.add(20, y1);
+    this.add(30, 0);
+    this.add(11, x2);
+    this.add(21, y2);
+    this.add(31, 0);
+  }
+
+  // Add closed polyline (rectangle)
+  addRectangle(layer: string, x: number, y: number, width: number, height: number, color?: number): void {
+    this.add(0, "POLYLINE");
+    this.add(8, layer);
+    if (color !== undefined) this.add(62, color);
+    this.add(66, 1);
+    this.add(70, 1); // Closed polyline
+    
+    // Vertices
+    const vertices = [
+      [x, y],
+      [x + width, y],
+      [x + width, y + height],
+      [x, y + height]
+    ];
+    
+    for (const [vx, vy] of vertices) {
+      this.add(0, "VERTEX");
+      this.add(8, layer);
+      this.add(10, vx);
+      this.add(20, vy);
+      this.add(30, 0);
+    }
+    
+    this.add(0, "SEQEND");
+    this.add(8, layer);
+  }
+
+  // Add TEXT entity
+  addText(layer: string, x: number, y: number, height: number, text: string, color?: number): void {
+    this.add(0, "TEXT");
+    this.add(8, layer);
+    if (color !== undefined) this.add(62, color);
+    this.add(10, x);
+    this.add(20, y);
+    this.add(30, 0);
+    this.add(40, height);
+    this.add(1, text);
+    this.add(7, "STANDARD");
+  }
+
+  // Add CIRCLE entity
+  addCircle(layer: string, x: number, y: number, radius: number, color?: number): void {
+    this.add(0, "CIRCLE");
+    this.add(8, layer);
+    if (color !== undefined) this.add(62, color);
+    this.add(10, x);
+    this.add(20, y);
+    this.add(30, 0);
+    this.add(40, radius);
+  }
+
+  // End the file
+  end(): void {
+    this.add(0, "EOF");
+  }
+}
+
+/**
+ * Generate a proper valid DXF file with smart layout
+ */
+function generateProperDXF(
+  dimensions: { width: number; length: number },
+  assets: any[],
+  zones: any[]
+): string {
+  const width = dimensions.width || 50;
+  const length = dimensions.length || 100;
+  const margin = 2; // Margin from walls
+  
+  const dxf = new DXFWriter();
+  
+  // Add header
+  dxf.addHeader(width, length);
+  
+  // Add tables with layer definitions
+  dxf.addTables();
+  
+  // Add blocks section
+  dxf.addBlocks();
+  
+  // Start entities
+  dxf.startEntities();
+  
+  // Draw factory outline (walls) - thick rectangle
+  dxf.addRectangle("WALLS", 0, 0, width, length);
+  
+  // Add dimension text outside the factory
+  dxf.addText("DIMENSIONS", 0, -4, 1.5, `${width}m x ${length}m Factory`);
+  
+  // Calculate layout based on factory size
+  // Use horizontal layout if width >= 30m, otherwise vertical stacking
+  const useHorizontalLayout = width >= 30;
+  
+  // Calculate machine sizes based on factory dimensions (adaptive)
+  const machineW = Math.min(3, width * 0.08);
+  const machineH = Math.min(4, length * 0.06);
+  const machineSpacing = Math.min(2, Math.max(1, width * 0.03));
+  
+  if (useHorizontalLayout) {
+    // HORIZONTAL LAYOUT: Production on left, support areas on right
+    const sideAreaWidth = Math.min(width * 0.25, 15);
+    const productionWidth = width - sideAreaWidth - margin * 3;
+    
+    // Production Area (left side)
+    const prodX = margin;
+    const prodY = margin;
+    const prodW = productionWidth;
+    const prodH = length - margin * 2;
+    
+    dxf.addRectangle("PATHWAYS", prodX, prodY, prodW, prodH, 8);
+    dxf.addText("TEXT", prodX + 2, prodY + prodH - 3, 1.2, "PRODUCTION AREA");
+    
+    // Side areas (right column)
+    const sideX = prodX + prodW + margin;
+    const sideW = sideAreaWidth;
+    
+    // Storage (bottom right)
+    const storageH = (length - margin * 4) * 0.4;
+    dxf.addRectangle("STORAGE", sideX, margin, sideW, storageH, 3);
+    dxf.addText("TEXT", sideX + 1, margin + storageH - 2, 0.8, "STORAGE");
+    
+    // Office (middle right)
+    const officeY = margin + storageH + margin;
+    const officeH = (length - margin * 4) * 0.35;
+    dxf.addRectangle("OFFICE", sideX, officeY, sideW, officeH, 6);
+    dxf.addText("TEXT", sideX + 1, officeY + officeH - 2, 0.8, "OFFICE");
+    
+    // Utilities (top right)
+    const utilY = officeY + officeH + margin;
+    const utilH = length - utilY - margin;
+    if (utilH > 3) {
+      dxf.addRectangle("UTILITIES", sideX, utilY, sideW, utilH, 4);
+      dxf.addText("TEXT", sideX + 1, utilY + utilH - 2, 0.8, "UTILITIES");
+    }
+    
+    // Place machines in production area
+    const machineAreaX = prodX + 3;
+    const machineAreaY = prodY + 5;
+    const machineAreaW = prodW - 6;
+    const machineAreaH = prodH - 10;
+    
+    const cols = Math.max(1, Math.floor(machineAreaW / (machineW + machineSpacing)));
+    const rows = Math.max(1, Math.floor(machineAreaH / (machineH + machineSpacing * 2)));
+    
+    const machinePositions: { x: number; y: number }[] = [];
+    let idx = 0;
+    
+    for (let row = 0; row < rows && idx < assets.length; row++) {
+      for (let col = 0; col < cols && idx < assets.length; col++) {
+        const mx = machineAreaX + col * (machineW + machineSpacing);
+        const my = machineAreaY + row * (machineH + machineSpacing * 2);
+        
+        dxf.addRectangle("MACHINES", mx, my, machineW, machineH, 5);
+        
+        const label = (assets[idx].name || `M${idx + 1}`).substring(0, 12);
+        dxf.addText("TEXT", mx, my - 1, 0.4, label);
+        
+        machinePositions.push({ x: mx + machineW / 2, y: my + machineH / 2 });
+        idx++;
+      }
+    }
+    
+    // Draw conveyors between machines
+    for (let i = 0; i < machinePositions.length - 1; i++) {
+      dxf.addLine("CONVEYORS", machinePositions[i].x, machinePositions[i].y, 
+                  machinePositions[i + 1].x, machinePositions[i + 1].y, 30);
+    }
+    
+    // Main pathway
+    dxf.addRectangle("PATHWAYS", prodX, prodY + 2, prodW, 2, 8);
+    dxf.addText("TEXT", prodX + prodW / 2 - 4, prodY + 2.5, 0.5, "MAIN AISLE");
+    
+    // Entry/Exit
+    dxf.addCircle("WALLS", 0, length / 3, 1, 1);
+    dxf.addText("TEXT", 1.5, length / 3 - 0.3, 0.5, "IN");
+    dxf.addCircle("WALLS", 0, length * 2 / 3, 1, 1);
+    dxf.addText("TEXT", 1.5, length * 2 / 3 - 0.3, 0.5, "OUT");
+    
+  } else {
+    // VERTICAL LAYOUT: For smaller factories - stack areas vertically
+    const usableWidth = width - margin * 2;
+    const usableHeight = length - margin * 2;
+    
+    // Production Area (main, top 60%)
+    const prodH = usableHeight * 0.6;
+    const prodX = margin;
+    const prodY = margin + usableHeight * 0.4;
+    
+    dxf.addRectangle("PATHWAYS", prodX, prodY, usableWidth, prodH, 8);
+    dxf.addText("TEXT", prodX + 1, prodY + prodH - 2, 0.8, "PRODUCTION");
+    
+    // Bottom strip: Storage, Office, Utilities side by side
+    const bottomY = margin;
+    const bottomH = usableHeight * 0.35;
+    const areaCount = 3;
+    const areaW = (usableWidth - margin * 2) / areaCount;
+    
+    // Storage (left)
+    dxf.addRectangle("STORAGE", margin, bottomY, areaW, bottomH, 3);
+    dxf.addText("TEXT", margin + 0.5, bottomY + bottomH - 1.5, 0.6, "STORAGE");
+    
+    // Office (middle)
+    dxf.addRectangle("OFFICE", margin + areaW + margin, bottomY, areaW, bottomH, 6);
+    dxf.addText("TEXT", margin + areaW + margin + 0.5, bottomY + bottomH - 1.5, 0.6, "OFFICE");
+    
+    // Utilities (right)
+    dxf.addRectangle("UTILITIES", margin + (areaW + margin) * 2, bottomY, areaW, bottomH, 4);
+    dxf.addText("TEXT", margin + (areaW + margin) * 2 + 0.5, bottomY + bottomH - 1.5, 0.6, "UTIL");
+    
+    // Place machines in production area
+    const machineAreaX = prodX + 2;
+    const machineAreaY = prodY + 3;
+    const machineAreaW = usableWidth - 4;
+    const machineAreaH = prodH - 6;
+    
+    // Smaller machines for small factories
+    const smallMachineW = Math.min(2, machineAreaW * 0.15);
+    const smallMachineH = Math.min(2.5, machineAreaH * 0.2);
+    const smallSpacing = Math.max(0.5, smallMachineW * 0.3);
+    
+    const cols = Math.max(1, Math.floor(machineAreaW / (smallMachineW + smallSpacing)));
+    const rows = Math.max(1, Math.floor(machineAreaH / (smallMachineH + smallSpacing * 1.5)));
+    
+    const machinePositions: { x: number; y: number }[] = [];
+    let idx = 0;
+    
+    for (let row = 0; row < rows && idx < assets.length; row++) {
+      for (let col = 0; col < cols && idx < assets.length; col++) {
+        const mx = machineAreaX + col * (smallMachineW + smallSpacing);
+        const my = machineAreaY + row * (smallMachineH + smallSpacing * 1.5);
+        
+        dxf.addRectangle("MACHINES", mx, my, smallMachineW, smallMachineH, 5);
+        
+        const label = (assets[idx].name || `M${idx + 1}`).substring(0, 8);
+        dxf.addText("TEXT", mx, my - 0.7, 0.3, label);
+        
+        machinePositions.push({ x: mx + smallMachineW / 2, y: my + smallMachineH / 2 });
+        idx++;
+      }
+    }
+    
+    // Draw conveyors
+    for (let i = 0; i < machinePositions.length - 1; i++) {
+      dxf.addLine("CONVEYORS", machinePositions[i].x, machinePositions[i].y, 
+                  machinePositions[i + 1].x, machinePositions[i + 1].y, 30);
+    }
+    
+    // Entry/Exit on left wall
+    dxf.addCircle("WALLS", 0, length * 0.7, 0.8, 1);
+    dxf.addText("TEXT", 1, length * 0.7 - 0.2, 0.4, "IN");
+    dxf.addCircle("WALLS", width, length * 0.7, 0.8, 1);
+    dxf.addText("TEXT", width - 2.5, length * 0.7 - 0.2, 0.4, "OUT");
+  }
+  
+  // Add title block outside factory bounds
+  dxf.addText("DIMENSIONS", 0, length + 3, 1.5, "FACTORY FLOOR PLAN");
+  dxf.addText("DIMENSIONS", 0, length + 6, 0.8, `Scale: 1 unit = 1 meter | Equipment: ${assets.length} machines`);
+  
+  // End entities
+  dxf.endEntities();
+  
+  // End file
+  dxf.end();
+  
+  return dxf.toString();
+}
+
 export default router;
 

@@ -164,6 +164,59 @@ export const dataApi = {
     );
     return data;
   },
+
+  generateFloorPlanSVG: async (
+    projectId: string
+  ): Promise<{
+    success: boolean;
+    svg: string;
+    metadata: {
+      factory_width: number;
+      factory_length: number;
+      equipment_count: number;
+      generated_at: string;
+    };
+  }> => {
+    const { data } = await api.post(`/projects/${projectId}/layout-floor-svg`);
+    return data;
+  },
+
+  generateFloorPlanDXF: async (
+    projectId: string
+  ): Promise<{
+    success: boolean;
+    dxf: string;
+    metadata: {
+      factory_width: number;
+      factory_length: number;
+      equipment_count: number;
+      generated_at: string;
+      format: string;
+      units: string;
+    };
+  }> => {
+    const { data } = await api.post(`/projects/${projectId}/layout-floor-dxf`);
+    return data;
+  },
+
+  convertSvgToDxf: async (
+    projectId: string,
+    svgContent: string
+  ): Promise<{
+    success: boolean;
+    dxf: string;
+    metadata: {
+      factory_width: number;
+      factory_length: number;
+      converted_from: string;
+      generated_at: string;
+      format: string;
+      units: string;
+    };
+  }> => {
+    const { data } = await api.post(`/projects/${projectId}/convert-svg-to-dxf`, { svgContent });
+    return data;
+  },
 };
 
 export const videoApi = {
